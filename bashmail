@@ -294,7 +294,6 @@ function get_unread_messages() {
 	done <&$readfd
     fi
     echo "$A SEARCH UNSEEN" >&$sendfd
-#    echo "$A SEARCH X-GM-RAW \"in:unread\"" >&$sendfd
      while read -r line; do
 	if [[ "$line" =~ OK.*Success ]]; then
 	    break
