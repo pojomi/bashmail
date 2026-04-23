@@ -1,0 +1,925 @@
+#!/usr/bin/bash
+
+# Save the terminal's screen prior to launching app
+echo -en '\e[?1049h'
+
+#################################################################################
+#				      VARS					#
+#################################################################################
+declare -n breg=BASH_REMATCH
+
+Black='\e[30m'
+R='\e[31m'
+G='\e[32m'
+Y='\e[33m'
+B='\e[34m'
+M='\e[35m'
+C='\e[36m'
+W='\e[37m'
+default='\e[39m'
+reset='\e[0m'
+
+Blackbg='\e[40m'
+Rbg='\e[41m'
+Gbg='\e[42m'
+Ybg='\e[43m'
+Bbg='\e[44m'
+Mbg='\e[45m'
+Cbg='\e[46m'
+Wbg='\e[47m'
+defaultbg='\e[49m'
+
+BrBlack='\e[90m'
+BrR='\e[91m'
+BrY='\e[92m'
+BrG='\e[93m'
+BrB='\e[94m'
+BrM='\e[95m'
+BrC='\e[96m'
+BrW='\e[97m'
+
+BrBlackbg='\e[100m'
+BrRbg='\e[101m'
+BrGbg='\e[102m'
+BrYbg='\e[103m'
+BrBbg='\e[104m'
+BrMbg='\e[105m'
+BrCbg='\e[106m'
+BrWbg='\e[107m'
+
+Bold='\e[1m'
+UL='\e[4m'
+
+splash=(
+"${R}██████╗ ${G} █████╗ ${Y} ██████  ${B}██   ██╗ ${M}██   ██╗ ${R} █████╗ ${G}██████ ${Y}██╗   "
+"${R}██║ ██║ ${G}██║  ██ ${Y}██╔═══╝  ${B}██   ██║ ${M}███ ███║ ${R}██║  ██ ${G}  ██╔╝ ${Y}██║   "
+"${R}█████╔╝ ${G}███████ ${Y}███████╗ ${B}███████║ ${M}██║█ ██║ ${R}███████ ${G}  ██║  ${Y}██║   "
+"${R}██║ ██╗ ${G}██║  ██ ${Y}     ██║ ${B}██║  ██║ ${M}██║  ██║ ${R}██║  ██ ${G}  ██╚╗ ${Y}██╚══╗"
+"${R}██████╝ ${G}██╝  ██ ${Y}██████═╝ ${B}██╝  ██╝ ${M}██╝  ██╝ ${R}██╝  ██ ${G}██████ ${Y}██████")
+
+splashlen=$(echo "${splash[0]}"|grep -m 1 '^..*'|sed -e "s/\\\e\[[0-9;]*[a-zA-Z]//g; s/$'\e'//g"|tr -d '\n'|wc -m)
+splashcols=${#splash[@]}
+
+linestart=10
+linepos=10
+message_line_pos=0
+
+# Pipes
+sendssl="/var/tmp/sendssl.log"
+readssl="/var/tmp/readssl.log"
+
+A="A"
+
+unread=""
+unreadstr=""
+declare -i unreadcount
+declare -a open_message open_message_range
+declare -a from_arr subject_arr
+
+popup_html_warn=("╔═══════════════════════════╗"
+                 "║ HTML is not yet supported ║"
+		 "╚═══════════════════════════╝")
+
+popup_reloading=("╔═══════════════════════════╗"
+		 "║ Reloading Unread Messages ║"
+		 "╚═══════════════════════════╝")
+
+##################################################################################
+#			   CURSOR AND SCREEN CONTROLS				 #
+##################################################################################
+function save_screen() {
+    echo -en '\e[?1049h'
+}
+
+function restore_screen() {
+    echo -en '\e[?1049l'
+}
+
+function forward_line () {
+    if (( message_line_pos == lines && open_message_range[1] >= lines - 1)); then
+	redraw_bottom_message_line
+    else
+	echo -en '\e[1E'
+	(( message_line_pos++ ))
+    fi
+}
+
+function backward_line () {
+    if (( message_line_pos == 0 && open_message_range[0] > 0 )); then
+	redraw_top_message_line
+    else
+	echo -en '\e[1F'
+	(( message_line_pos-- ))
+    fi
+}
+
+function redraw_top_message_line() {
+    # Draw a blank line at line 1
+    echo -en '\e[1T'
+    set_cursor 0 0
+    hide_cursor
+    #    (( message_line_pos-- ))
+    (( open_message_range[0]-- ))
+    (( open_message_range[1]-- ))
+    echo -en "${open_message[${open_message_range[0]}]}"
+    set_cursor 0 0
+    show_cursor
+}
+
+function redraw_bottom_message_line() {
+    # Draw a blank line at bottom line
+    if (( open_message_range[1] < ${#open_message[@]} - 1 )); then
+	echo -en '\e[1S'
+	set_cursor $lines 0
+	hide_cursor
+	(( open_message_range[0]++ ))
+	(( open_message_range[1]++ ))
+	echo -en "${open_message[${open_message_range[1]}]}"
+	set_cursor $lines 0
+	show_cursor
+    fi
+}
+
+function draw_previous_page() {
+    # If line 1 is > message index 0, draw previous n $lines on screen
+    # If message index 0 is reached, stop there, print on line 1 through n $lines
+    open_message_range[0]=$(( open_message_range[0] - lines ))
+    open_message_range[1]=$(( open_message_range[0] + lines - 1 ))
+    if (( open_message_range[0] >= 0 )); then
+	# Define index 1 first to reference current index 0 as start point
+	hide_cursor
+	clear
+	set_cursor 0 0
+	for (( i=0;i<lines;i++ )); do
+	    set_cursor $i 0
+	    echo -en "${open_message[open_message_range[0]+i]}"
+	done
+	set_cursor 0 0
+	message_line_pos=1
+	show_cursor
+    else
+	hide_cursor
+	clear
+	for (( i=0;i<lines;i++ )); do
+	    set_cursor $i 0
+	    echo -en "${open_message[i]}"
+	done
+	set_cursor 0 0
+	show_cursor
+	open_message_range[0]=0
+	open_message_range[1]=$(( open_message_range[0] + lines - 1))
+	message_line_pos=1
+    fi
+}
+
+function draw_next_page() {
+    # If there are >=n $lines ahead in message indexes, print n lines
+    # Else, print any remainder < n $lines
+    # If end of message visible, do nothing
+    message_remaining_lines=$(( ${#open_message[@]} - open_message_range[1] + 1 ))
+    open_message_range[0]=$(( open_message_range[1] + 1 ))
+    if (( message_remaining_lines >= lines )); then
+	open_message_range[1]=$(( open_message_range[0] + lines - 1 ))
+	hide_cursor
+	clear
+	set_cursor 0 0
+	for (( i=0;i<lines;i++ )); do
+	    set_cursor $i 0
+	    echo -en "${open_message[open_message_range[0]+i]}"
+	done
+	set_cursor 0 0
+	message_line_pos=1
+	show_cursor
+    elif (( message_remaining_lines > 0 )); then
+	open_message_range[1]=$(( open_message_range[0] + message_remaining_lines - 1 ))
+	hide_cursor
+	clear
+	for (( i=0;i<message_remaining_lines;i++ )); do
+	    set_cursor $i 0
+	    echo -en "${open_message[i]}"
+	done
+	set_cursor 0 0
+	show_cursor
+	message_line_pos=1
+    fi
+}
+
+function forward_column () {
+    echo -en '\e[1C'
+}
+
+function backward_column () {
+    echo -en '\e[1D'
+}
+
+function set_cursor() {
+    if (( $1 > $lines )); then
+	echo "Invalid line"
+	return
+    elif (( $2 > $columns )); then
+	echo "Invalid column"
+	return
+    else
+	echo -en '\e['"$1"';'"$2"'H'
+    fi
+}
+
+function hide_cursor() {
+    echo -en '\e[?25l'
+}
+
+function show_cursor() {
+    echo -en '\e[?25h'
+}
+
+function hide_prompt() {
+    echo -en '\e[8m'
+}
+
+function show_prompt() {
+    echo -en '\e[28m'
+}
+
+function hide_mode() {
+    echo -en '\e[8m\e[?25l'
+}
+
+function hide_mode_off() {
+    echo -en '\e[28m\e[?25h'
+}
+
+function reset_colors() {
+    echo -en '\e[0m'
+}
+
+function erase_line() {
+    echo -en '\e[2K'
+}
+
+function erase_backwards() {
+    echo -en '\e[1K'
+}
+
+function echo_list() {
+    declare -n arr=$1
+    for (( i=0; i<${arr[@]}; i++ )); do
+	echo "${arr[${i}]}"
+    done
+}
+
+function clearfifo() {
+    while read -t 0.5 line; do
+	continue
+    done <&$readfd
+}
+
+function get_unread_messages() {
+    # Send request to server for list of unread message IDs
+    # Store in array $unread
+    # 0 args check is the initial call only
+    if (( $# == 0 )); then
+	echo "$A SELECT INBOX" >&$sendfd
+	while read line; do
+	    if [[ "$line" =~ \(Success\) ]]; then
+		hide_mode_off
+		echo "Inbox selected"
+		splash_forward_line
+		hide_mode
+		break
+	    elif [[ "$line" =~ BAD|Fail ]]; then
+		echo "Failed inbox selection"
+		sleep 2s
+		exit
+	    fi
+	done <&$readfd
+    fi
+    echo "$A SEARCH X-GM-RAW \"in:unread\"" >&$sendfd
+     while read line; do
+	if [[ "$line" =~ OK.*Success ]]; then
+	    break
+	elif [[ "$line" =~ BAD|Fail ]]; then
+	    echo "Failed unread search"
+	    sleep 3s
+	    exit
+	elif [[ "$line" =~ SEARCH" "([0-9].*) ]]; then
+	    id_str="${breg[1]//$'\r'/}"
+	    unread=($(echo "${id_str// /$'\n'}"))
+	    unread_str="${id_str// /,}"
+	    unreadcount=${#unread[@]}
+	    # Store the terminal line numbers
+	    firstunread=2
+	    lastunread=$(( unreadcount * 2))
+	    linepos=2
+	    prevlinepos=0
+	fi
+    done <&$readfd
+}
+
+function reset_indexes() {
+    # Unset all indexes of any passed array names
+    # Args should be strings not prefixed with "$"
+    for i in $(seq 1 $#); do
+	# Expand $i with ${!i} to get the string from $1,2,3...
+	declare -n arg_arr=${!i}
+	unset arg_arr[@]
+    done
+}
+
+function fetch_header_field() {
+    clearfifo
+    echo "$A FETCH $1 body.peek[header.fields (from subject)]" >&$sendfd
+    i=0
+    while read -s line; do
+	if [[ "$line" =~ OK.*Success|BAD ]]; then break; fi
+	if [[ "$line" =~ \{[0-9]+\} ]]; then
+	    bytes=$(echo "${breg//["{"|"}"|$'\n']/}")
+	    if (( bytes > 0 )); then
+		read -N $bytes body <&$readfd
+		regex1="From: (.*)Subject"
+		regex2="From: (.*)"
+		if [[ "$body" =~ $regex1 || "$body" =~ $regex2 ]]; then
+		    regval="${breg[1]//[$'\n'|\"]/}"
+		    regex1="^([^\<]*)"
+		    regex2="^(\<.*\>)"
+		    if [[ "$regval" =~ $regex1 || "$regval" =~ $regex2 ]]; then
+			from_arr[$i]=${breg[1]//[<>]/}
+		    else
+			from_arr[$i]=$regval
+		    fi
+		    regex1="Subject: (.*)From"
+		    regex2="Subject: (.*)"
+		    if [[ "$body" =~ $regex1 || "$body" =~ $regex2 ]]; then
+			subject_arr[$i]="${breg[1]//[$'\n'|\"]/}"
+		    fi
+		    (( i++ ))
+		fi
+	    fi
+	fi
+    done <&$readfd
+}
+
+function parse_headers() {
+    for (( i=0;i<$unreadcount;i++ )); do
+	if [[ "${from_arr[$i]}" =~ \?B\? ]]; then
+	    from_arr[$i]=$(decode_b64 from_arr $i);
+	fi
+	if [[ "${from_arr[$i]}" =~ \?Q\? ]]; then
+	    from_arr[$i]=$(decode_qp --header "${from_arr[$i]}");
+	fi
+	if [[ "${subject_arr[$i]}" =~ \?B\? ]]; then
+	    subject_arr[$i]=$(decode_b64 subject_arr $i);
+	fi
+	if [[ "${subject_arr[$i]}" =~ \?Q\? ]]; then
+	    subject_arr[$i]=$(decode_qp --header "${subject_arr[$i]}");
+	fi
+    done
+}
+
+function draw_popup() {
+    # $1 popup array box var name (no "$")
+    # $2 flag for type of popup; Currently only "--warn"
+    declare -n error_arr=$1
+    box_len=${#error_arr[0]}
+    box_lines=${#error_arr[@]}
+    box_line_center=$(( box_lines / 2))
+    box_col_center=$(( box_len / 2))
+    tty_start_col=$(( columns / 2 - box_col_center ))
+    tty_start_line=$(( lines / 2 - box_line_center ))
+
+    hide_cursor
+    if [[ "$2" == "--warn" ]]; then
+	echo -en "$Ybg$Black"
+    else
+	echo -en "$Gbg$Black"
+    fi
+    for (( i=0;i<box_lines;i++ )); do
+	set_cursor $tty_start_line $tty_start_col
+	(( tty_start_line++ ))
+	echo -en "${error_arr[i]}"
+    done
+    if [[ "$2" == "--warn" ]]; then
+	read -n 1 -t 3 close_error
+	draw_unread
+	highlight
+    fi
+}
+    
+
+function draw_unread() {
+    # Clear the terminal
+    reset_colors
+    clear
+    hide_cursor
+    set_cursor 0 0
+
+    # Add a header line
+    echo -e "$BrBlackbg  [Unread]$reset"
+
+    # Decrement to sort newest first
+    for (( i=$unreadcount-1; i>-1; i-- )); do
+	reset_colors
+	echo -e " $R${from_arr[$i]}"
+	reset_colors
+	echo -e " $Y${subject_arr[$i]}"
+    done
+    set_cursor $linepos 1
+
+    if [[ -n "$bottom_text" ]]; then
+	set_bottom_bar
+    fi
+}
+
+function reload_unread() {
+    clearfifo
+    reset_indexes unread from_arr subject_arr
+    reset_colors
+    get_unread_messages --reload
+    fetch_header_field $unread_str
+    parse_headers
+    draw_unread
+    set_bottom_bar
+    highlight
+}
+
+# Relevant index of message
+# $1: Either $prevlinepos or $linepos
+function rel_msg_index() {
+    declare -i selected_line=$1
+    echo $(( (lastunread - selected_line) / 2 ))
+}
+
+# To print the visibly highlighted index
+function bottom_msg_at_cursor() {
+    echo $(( linepos / 2 ))
+}
+
+function set_bottom_bar() {
+    bottom_text="($(bottom_msg_at_cursor)/$unreadcount)"
+    bottom_unused_cols=$(( columns - ${#bottom_text} - 1 ))
+    set_cursor $bottomline 1
+    erase_line
+    echo -en "$Rbg$Black$Bold $bottom_text"
+    for (( i=0; i<$bottom_unused_cols; i++ )); do
+	echo -n " "
+    done
+    set_cursor $linepos 1
+}
+
+function update_bottom_bar() {
+    if (( unreadcount > 1 )); then
+	hide_cursor
+	bottom_text_len=${#bottom_text}
+	set_cursor $bottomline 1
+	bottom_text="($(bottom_msg_at_cursor)/$unreadcount)"
+	bottom_text_diff=$(( $bottom_text_len - ${#bottom_text} ))
+	if (( bottom_text_diff > 0 )); then
+	    for (( i=0; i<$bottom_text_diff; i++ )); do
+		bottom_text+=" "
+	    done
+	fi
+	echo -en "$Rbg$Black$Bold $bottom_text"
+	set_cursor $linepos 1
+#	show_cursor
+    fi
+}
+
+function highlight() {
+    prev_msg_index=$(rel_msg_index $prevlinepos)
+    line_msg_index=$(rel_msg_index $linepos)
+
+    if (( prevlinepos > 0 )); then
+	set_cursor $prevlinepos 1
+	reset_colors
+	echo -e " $R${from_arr[$prev_msg_index]}"
+	#	forward_line
+	reset_colors
+	echo -e " $Y${subject_arr[$prev_msg_index]}"
+    fi
+
+    set_cursor $linepos 1
+    reset_colors
+    echo -e " $R$Bbg$Bold${from_arr[$line_msg_index]}"
+    #    forward_line
+    reset_colors
+    echo -e " $Y$Bbg$Bold${subject_arr[$line_msg_index]}"
+
+    set_cursor $linepos 1
+}
+
+
+##################################################################################
+#				    NAVIGATION					 #
+##################################################################################
+function inbox_list_forward() {
+    if (( unreadcount > 1 )); then
+	linesum=$(( 2 + linepos ))
+	# Wrap at last message
+	if (( linesum >= lastunread + 1 )); then
+	    set_cursor $firstunread 1
+	    prevlinepos=$linepos
+	    linepos=$firstunread
+	    highlight
+	    update_bottom_bar
+	else
+	    set_cursor $linesum 1
+	    prevlinepos=$linepos
+	    (( linepos += 2 ))
+	    highlight
+	    update_bottom_bar
+	fi
+    fi
+}
+
+function inbox_list_backward() {
+    if (( unreadcount > 1 )); then
+	linesum=$(( linepos - 2 ))
+	# Wrap at first message
+	if (( linesum <= firstunread - 1 )); then
+	    set_cursor $lastunread 1
+	    prevlinepos=$linepos
+	    linepos=$lastunread
+	    highlight
+	    update_bottom_bar
+	else
+	    set_cursor $linesum 1
+	    prevlinepos=$linepos
+	    (( linepos -= 2 ))
+	    highlight
+	    update_bottom_bar
+	fi
+    fi
+}
+
+function unread_nav_mode() {
+    while read -s -n 1 key; do
+	case "$key" in
+	    "")
+		inbox_list_forward
+		;;
+	    "")
+		inbox_list_backward
+		;;
+	    r)
+		draw_popup popup_reloading
+		reload_unread
+		;;
+	    j)
+		inbox_list_forward
+		;;
+	    k)
+		inbox_list_backward
+		;;
+	    "")
+		get_mime_structure unread
+		;;
+	    "")
+		break
+		;;
+	    q)
+		break
+		;;
+	esac
+    done
+}
+
+function message_nav_mode () {
+    while read -s -n 1 key; do
+	case "$key" in
+	    $'\e')
+		draw_unread
+		highlight
+		break
+		;;
+	    q)
+		reset_indexes open_message
+		draw_unread
+		highlight
+		break
+		;;
+	    b)
+		draw_previous_page
+		;;
+	    f)
+		draw_next_page
+		;;
+	    j)
+		forward_line
+		;;
+	    k)
+		backward_line
+		;;
+	    h)
+		backward_column
+		;;
+	    l)
+		forward_column
+		;;
+	    "")
+		forward_column
+		;;
+	    "")
+		backward_column
+		;;
+	    "")
+		forward_line
+		;;
+	    "")
+		backward_line
+		;;
+	esac
+    done
+}
+#################################################################################
+#			       MESSAGE PROCESSING				#
+#################################################################################
+
+function get_mime_structure() {
+    clearfifo
+    declare -n unread_arr=$1
+    selected_message=${unread_arr[$(rel_msg_index $linepos)]}
+    declare -A structure
+    response=""; container=""; parens=""
+    declare -i paren_count
+    structure[id]="$selected_message"
+    structure[encoding]="none"
+    echo "$A FETCH $selected_message BODYSTRUCTURE" >&$sendfd
+    while read line; do
+	if [[ "$line" =~ OK.*Success|BAD ]]; then break; fi
+	response+="$line"
+    done <&$readfd
+    # [1] is the parens. [2] is the format. [3] is the rest of the container.
+    if [[ "$response" =~ BODYSTRUCTURE[^\(]*(\({1,})([^ ]{1,}" "[^ ]{1,})([^\)]*\)){2} ]]; then
+	parens="${breg[1]}"
+	structure[format]="${breg[2]}"
+	container="${breg[@]:2:2}"
+    fi
+    [[ "$container" =~ "QUOTED-PRINTABLE" ]] && structure[encoding]="qp"
+    if (( ${#parens} > 0 )); then
+	paren_count=$(( ${#parens}-1 ))
+	(( paren_count == 3 )) && structure[leaf]="1.1.1"
+	(( paren_count == 2 )) && structure[leaf]="1.1"
+	(( paren_count == 1 )) && structure[leaf]="1"
+    fi
+    if [[ "${structure[format]}" =~ HTML ]]; then
+	draw_popup popup_html_warn --warn
+	return
+    fi
+
+    get_message structure
+}
+
+function get_message() {
+    # $1: AA structure
+    declare -n struct=$1
+    declare -i count=0
+    echo "$A FETCH ${struct[id]} body.peek[${struct[leaf]}]" >&$sendfd
+    read bytes <&$readfd
+    [[ "$bytes" =~ \{([0-9]{1,})\} ]] && bytes="${breg[1]}"
+    read -N $bytes message <&$readfd
+    while read line; do
+	open_message[$count]="$line"
+	(( count++ ))
+    done < <(echo "$message")
+    if [[ "${struct[encoding]}" == "none" ]]; then
+	parse_plain_links
+	message_cleanup_whitespace
+	print_message
+    elif [[ "${struct[encoding]}" == "qp" ]]; then
+	decode_qp --message
+	parse_plain_links
+	message_cleanup_whitespace
+	print_message
+    fi
+}
+
+# $1: namespace $2: index
+function decode_b64() {
+    declare -n arr=$1
+    full_string="${arr[$2]}"
+    full_string="${full_string//$'\n'/}"
+    [[ ! "$full_string" =~ \?= ]] && echo "End of Base64 not found"
+    [[ "$full_string" =~ ^[^=]* && ${#breg} > 0 ]] && plain_pre="$breg"
+    [[ "$full_string" =~ =\?.{5}\?B\?.*=\? ]] && stripped="$breg"
+    regexsed="s/(=\?.{5}\?B\?)|(=?\?=)|([[:space:]])//g"
+    encoded=$(echo "${stripped//$'\n'/}"|sed -r "$regexsed")
+    # Sometimes base64 is printing errors when everything seems to load fine.
+    # For now, redirecting stderr to /dev/null
+    decoded=$(echo "$encoded"|base64 -d 2>/dev/null)
+    [[ -v plain_pre ]] && echo "$plain_pre$decoded" || echo "$decoded"
+}
+
+function decode_qp() {
+    # If $1 is array, sed the whole thing here ***TODO: tweak args***
+    clearfifo
+    if [[ "$1" == "--message" ]]; then
+	for (( i=0;i<${#open_message[@]};i++ )); do
+	    open_message[$i]=$(echo "${open_message[$i]}"\
+				   |sed -r 's/=([A-Za-z0-9]{2})/\\x\1/g;s/=//g')
+	done
+    elif [[ "$1" == "--header" ]]; then
+	string="${2//$'\n'/}"
+	[[ "$string" =~ ^[^=]* && ${#breg} > 0 ]] && string_pre_qp="$breg"
+	[[ "$string" =~ ^.*=\?.{5}\?Q\?(.*)\?= ]] && string_qp="${breg[1]//$'\n'/}"
+	if [[ -v string_qp && ${#string_qp} > 0 ]]; then
+	    regex="=([A-Za-z0-9]{2})"
+	    qp_message=$(echo "$string_qp"|sed -r "s/_/ /g; s/$regex/\\\x\1/g")
+	    [[ -v string_pre_qp ]] && echo -e "$string_pre_qp$qp_message"\
+		    || echo -e "$qp_message"
+	else
+	    echo "Failed to decode text"
+	fi
+    fi
+}
+
+function parse_html() {
+    clearfifo
+    for (( i=0;i<${#open_message[@]};i++ )); do
+	open_message[$i]=$(echo "${open_message[$i]}"\
+			       |sed -r 's/<br>/\n/g; s/<\/?.*>//g')
+    done
+}
+
+function parse_plain_links() {
+    for (( i=0;i<${#open_message[@]};i++ )); do
+	open_message[$i]=$(echo "${open_message[$i]}"\
+	  |sed -r "s/[(<]?.?(https?|mailto).*[)>[:blank:]]?/\\${BrB}Link\\$reset/g")
+    done
+}
+
+function message_cleanup_whitespace() {
+    # Any groups of 3 or more consecutive new lines, reduce to 2
+    for (( i=0;i<${#open_message[@]};i++ )); do
+	if [[ "${open_message[$i]}" =~ ^$'\n' &&\
+		  "${open_message[$i+1]}" =~ ^$'\n' &&\
+		  "${open_message[$i+2]}" =~ ^$'\n' ]]; then
+	    unset open_message[$i+2]
+	fi
+    done
+}
+
+function print_message() {
+    reset_colors
+    clear
+    for (( i=0;i<$lines;i++ )); do
+	if [[ -v open_message[$i] ]]; then
+	    set_cursor $i 0
+	    echo -en "${open_message[$i]}"
+	    
+	else
+	    break
+	fi
+    done
+    open_message_range[0]=0
+    open_message_range[1]=$(( lines - 1 ))
+    set_cursor 0 0
+    message_line_pos=1
+    show_cursor
+    message_nav_mode
+}
+
+#################################################################################
+#				    NOTOUCH					#
+#################################################################################
+# Remove terminal prompt
+PS1=""
+trap "echo -en '\e[?1049l'" EXIT ERR
+
+# Get total columns and lines
+read -r lines columns < <(stty size)
+termcenter=$(( $columns / 2 ))
+splashcenter=$(( $splashlen / 2 ))
+splashstart=$(( $termcenter - $splashcenter ))
+
+echo -e "$defaultbg"
+clear
+
+if (( $splashlen > $columns + 10 )); then
+    echo "Window too small"
+    exit
+fi
+
+function splash_forward_line() {
+    (( linepos ++ ))
+    set_cursor $linepos $splashstart
+}
+
+for (( i=0; i<$splashcols; i++ )); do
+    set_cursor $(( linestart + i )) $splashstart
+    echo -e "${splash[$i]}"
+    (( linepos++ ))
+done
+echo -e "$reset"
+
+splash_forward_line
+
+#################################################################################
+#	       Get credentials -- Encrypt and store if not found		#
+#################################################################################
+emailenc="${HOME}/.bashmail/.emailenc"
+passenc="${HOME}/.bashmail/.passenc"
+
+if ! [[ -f "$emailenc" && -f "$passenc"  ]]; then
+    echo -n "Email: "
+    read -r email
+    echo "$email" | openssl aes-256-cbc -pbkdf2 -pass pass:"bashmailemail"\\
+    -out "$emailenc" # ~/.bashmail/.emailenc
+    splash_forward_line
+
+    echo -n "Pass: "
+    read -s -r pass
+    echo "$pass" | openssl aes-256-cbc -pbkdf2 -pass pass:"bashmailpass"\\
+    -out "$passenc" # ~/.bashmail/.passenc
+    splash_forward_line
+else
+    echo "Found stored credentials. Decrypting..."
+    email="$(openssl aes-256-cbc -pbkdf2 -d -pass pass:"bashmailemail" -in $emailenc)"
+    pass="$(openssl aes-256-cbc -pbkdf2 -d -pass pass:"bashmailpass" -in $passenc)"
+    splash_forward_line
+fi
+
+imapdomain="$(echo 'imap.'$(echo $email | sed -e 's/^[^@]*@//')':993')"
+
+
+#################################################################################
+#				    SSL Prep					#
+#################################################################################
+echo "Attempting to login..."
+splash_forward_line
+
+if ! [[ -p $sendssl ]]; then
+    mkfifo /var/tmp/sendssl.log
+fi
+
+if ! [[ -p $readssl ]]; then
+    mkfifo /var/tmp/readssl.log
+fi
+
+# Create FDs
+exec {sendfd}<>/var/tmp/sendssl.log # use $sendfd -- Send commands here
+exec {readfd}<>/var/tmp/readssl.log
+
+#################################################################################
+#				  Call openssl					#
+#################################################################################
+hide_mode
+openssl s_client -connect $imapdomain -quiet -crlf <&$sendfd >&$readfd &
+sslpid=$!
+
+# Trap to kill, restore previous terminal screen/coloring on term or error
+trap "kill $sslpid; echo -en '\e[?1049l'; hide_mode_off; reset_colors" EXIT ERR
+
+#################################################################################
+#		       SSL connection and inbox selection			#
+#################################################################################
+while read -s line; do
+    case "$line" in
+	"* OK"*) # Initial connection response
+	    hide_mode_off
+	    splash_forward_line
+	    echo "SSL connection established. Sending credentials"
+	    splash_forward_line
+	    hide_mode
+	    echo "$A LOGIN $email $pass" >&$sendfd
+	    ;;
+	"$A"*"OK"*"Success"*) # Response to $A LOGIN
+	    hide_mode_off
+	    echo "Successfully logged in"
+	    splash_forward_line
+	    hide_mode
+	    break
+	    ;;
+	*"BAD"*) # Failed response of any kind
+	    echo "Failed to login"
+	    sleep 3s
+	    exit
+	    ;;
+	*)
+	    continue
+	    ;;
+    esac
+done <&$readfd
+
+get_unread_messages
+fetch_header_field $unread_str
+parse_headers
+clearfifo
+hide_mode_off
+draw_unread
+
+##################################################################################
+#				   BOTTOM BAR					 #
+#			   Show cursor position range				 #
+#				   Ex: (2/10)					 #
+##################################################################################
+bottom_text="" # Store globally to track the length between changes
+bottomline=$lines
+set_bottom_bar
+
+# After bottom bar is set, rehighlight message at cursor
+highlight
+
+message_bs=""
+
+unread_nav_mode
+
+rm $sendssl $readssl
