@@ -261,7 +261,7 @@ function erase_backwards() {
 }
 
 function echo_list() {
-    declare -n arr=$1
+    local -n arr=$1
     for (( i=0; i<${arr[@]}; i++ )); do
 	echo "${arr[${i}]}"
     done
@@ -320,7 +320,7 @@ function reset_indexes() {
     # Args should be strings not prefixed with "$"
     for i in $(seq 1 $#); do
 	# Expand $i with ${!i} to get the string from $1,2,3...
-	declare -n arg_arr=${!i}
+	local -n arg_arr=${!i}
 	unset "arg_arr[@]"
     done
 }
@@ -381,7 +381,7 @@ function parse_headers() {
 function draw_popup() {
     # $1 popup array box var name (no "$")
     # $2 flag for type of popup; Currently only "--warn"
-    declare -n error_arr=$1
+    local -n error_arr=$1
     box_len=${#error_arr[0]}
     box_lines=${#error_arr[@]}
     box_line_center=$(( box_lines / 2))
@@ -448,7 +448,7 @@ function reload_unread() {
 # Relevant index of message
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
-    declare -i selected_line=$1
+    local -i selected_line=$1
     echo $(( (lastunread - selected_line) / 2 ))
 }
 
@@ -639,11 +639,11 @@ function message_nav_mode () {
 
 function get_mime_structure() {
     clearfifo
-    declare -n unread_arr=$1
+    local -n unread_arr=$1
     selected_message=${unread_arr[$(rel_msg_index $linepos)]}
-    declare -A structure
+    local -A structure
     response=""; container=""; parens=""
-    declare -i paren_count
+    local -i paren_count
     structure[id]="$selected_message"
     structure[encoding]="none"
     echo "$A FETCH $selected_message BODYSTRUCTURE" >&$sendfd
