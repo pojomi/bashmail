@@ -48,12 +48,12 @@ Supported/tested message types include:
 
 In most cases, hyperlinks are replaced with "Link" written in your terminal's blue foreground color. These are **not** interactive links.
 ## Key Bindings
-`q`/`^C` From unread tab, quit `bashmail`; From message view, `q` returns to unread tab, `^C` will quit `bashmail`
-`j`/`k` to go down/up the list of unread messages, or down/up every line when viewing a message
-`^N`/`^P` are bound to the same actions as `j`/`k`
-`f`/`b` (message-view only) forward/back one full page
-`r` (unread tab only) reload unread messages
-`return`/`enter` to open focused message
+- `q`/`^C` From unread tab, quit `bashmail`; From message view, `q` returns to unread tab, `^C` will quit `bashmail`
+- `j`/`k` to go down/up the list of unread messages, or down/up every line when viewing a message
+- `^N`/`^P` are bound to the same actions as `j`/`k`
+- `f`/`b` (message-view only) forward/back one full page
+- `r` (unread tab only) reload unread messages
+- `return`/`enter` to open focused message
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Roadmap
