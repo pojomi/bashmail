@@ -70,23 +70,28 @@ readssl="/var/tmp/readssl.log"
 
 A="A"
 
-declare unreadstr bottom_text
+declare unreadstr bottom_text mode
 declare -i lines  columns unreadcount firstunread lastunread linepos prevlinepos bottomline\
-	termcenter splashcenter splashstart splashcols
-declare -a unread open_message open_message_range
+	termcenter splashcenter splashstart splashcols state
+declare -a unread open_message open_message_range marked_messages
 declare -a from_arr subject_arr
 
-declare -a popup_html_warn=("╔═══════════════════════════╗"
-                            "║ HTML is not yet supported ║"
-		            "╚═══════════════════════════╝")
+popup_html_warn=("╔═══════════════════════════╗"
+                 "║ HTML is not yet supported ║"
+		 "╚═══════════════════════════╝")
 
-declare -a popup_reloading=("╔═══════════════════════════╗"
-			    "║ Reloading Unread Messages ║"
-			    "╚═══════════════════════════╝")
+popup_reloading=("╔═══════════════════════════╗"
+		 "║ Reloading Unread Messages ║"
+		 "╚═══════════════════════════╝")
+
+popup_window_too_small=("╔══════════════════╗"
+			"║ Window too small ║"
+			"╚══════════════════╝")
 
 ##################################################################################
 #			   CURSOR AND SCREEN CONTROLS				 #
 ##################################################################################
+
 function save_screen() {
     echo -en '\e[?1049h'
 }
@@ -267,6 +272,18 @@ function echo_list() {
     done
 }
 
+function get_index_n() {
+    # $1: Array
+    # $2: String to match
+    local -n arr=$1
+    for (( i=0;i<${#arr[@]};i++ )); do
+	if [[ "${arr[i]}" == "$2" ]]; then
+	    echo "$i"
+	    break
+	fi
+    done
+}
+
 function clearfifo() {
     while read -r -t 0.5 line; do
 	continue
@@ -406,6 +423,7 @@ function draw_popup() {
 	draw_unread
 	highlight
     fi
+    reset_colors
 }
     
 
@@ -422,15 +440,22 @@ function draw_unread() {
     # Decrement to sort newest first
     for (( i=unreadcount-1; i>-1; i-- )); do
 	reset_colors
-	echo -e " $R${from_arr[$i]}"
-	reset_colors
-	echo -e " $Y${subject_arr[$i]}"
+	if [[ "${marked_messages[@]}" =~ "${unread[i]}" ]]; then
+	    echo -e "$W*$R${from_arr[i]}"
+	    reset_colors
+	    echo -e " $Y${subject_arr[i]}"
+	else
+	    echo -e " $R${from_arr[i]}"
+	    reset_colors
+	    echo -e " $Y${subject_arr[i]}"
+	fi
     done
     set_cursor $linepos 1
 
     if [[ -n "$bottom_text" ]]; then
 	set_bottom_bar
     fi
+    mode="unread"
 }
 
 function reload_unread() {
@@ -483,7 +508,6 @@ function update_bottom_bar() {
 	fi
 	echo -en "$Rbg$Black$Bold $bottom_text"
 	set_cursor $linepos 1
-#	show_cursor
     fi
 }
 
@@ -492,28 +516,40 @@ function highlight() {
     line_msg_index=$(rel_msg_index $linepos)
 
     if (( prevlinepos > 0 )); then
-	set_cursor $prevlinepos 1
+	set_cursor $prevlinepos 0
 	reset_colors
-	echo -e " $R${from_arr[$prev_msg_index]}"
-	#	forward_line
+	if [[ "${marked_messages[@]}" =~ "${unread[prev_msg_index]}" ]]; then
+	    echo -e "$W*$R${from_arr[prev_msg_index]}"
+	else
+	    echo -e " $R${from_arr[prev_msg_index]}"
+	fi
 	reset_colors
-	echo -e " $Y${subject_arr[$prev_msg_index]}"
+	echo -e " $Y${subject_arr[prev_msg_index]}"
     fi
 
-    set_cursor $linepos 1
+    set_cursor $linepos 0
     reset_colors
-    echo -e " $R$Bbg$Bold${from_arr[$line_msg_index]}"
-    #    forward_line
+    if [[ "${marked_messages[@]}" =~ "${unread[line_msg_index]}" ]]; then
+	echo -e "$W*$R$Bbg$Bold${from_arr[line_msg_index]}"
+    else
+	echo -e " $R$Bbg$Bold${from_arr[line_msg_index]}"
+    fi
     reset_colors
-    echo -e " $Y$Bbg$Bold${subject_arr[$line_msg_index]}"
+    echo -e " $Y$Bbg$Bold${subject_arr[line_msg_index]}"
 
-    set_cursor $linepos 1
+    set_cursor $linepos 0
 }
 
 
 ##################################################################################
 #				    NAVIGATION					 #
 ##################################################################################
+
+function splash_forward_line() {
+    (( linepos++ ))
+    set_cursor $linepos $splashstart
+}
+
 function inbox_list_forward() {
     if (( unreadcount > 1 )); then
 	linesum=$(( 2 + linepos ))
@@ -572,6 +608,9 @@ function unread_nav_mode() {
 		;;
 	    k)
 		inbox_list_backward
+		;;
+	    m)
+		mark_message
 		;;
 	    "")
 		get_mime_structure unread
@@ -790,44 +829,66 @@ function print_message() {
     open_message_range[1]=$(( lines - 1 ))
     set_cursor 0 0
     message_line_pos=1
+    mode="message"
     show_cursor
     message_nav_mode
 }
+#######################################################################
+#			    Inbox/Unread Commands		      #
+#######################################################################
 
-#################################################################################
-#				    NOTOUCH					#
-#################################################################################
+function mark_message() {
+    local -i index=$(rel_msg_index $linepos)
+    if [[ "${marked_messages[@]}" =~ "${unread[index]}" ]]; then
+	marked_index=$(get_index_n marked_messages "${unread[index]}")
+	unset 'marked_messages[marked_index]'
+	unmark_message
+    else
+	marked_messages+=("${unread[index]}")
+	draw_marked_symbol
+    fi
+}
+
+function draw_marked_symbol() {
+    reset_colors
+    echo -en "$W*"
+    set_cursor $linepos 0
+    reset_colors
+}
+
+function unmark_message() {
+    reset_colors
+    echo -n " "
+    set_cursor $linepos 0
+}
+
+#######################################################################
+#			      Main init				      #
+#######################################################################
 # Remove terminal prompt
 PS1=""
+
 trap "echo -en '\e[?1049l'" EXIT ERR
 
 # Get total columns and lines
 read -r lines columns < <(stty size)
+
 termcenter=$(( columns / 2 ))
 splashcenter=$(( splashlen / 2 ))
 splashstart=$(( termcenter - splashcenter ))
 
-echo -e "$defaultbg"
 clear
+reset_colors
 
-if (( splashlen > columns + 10 )); then
-    echo "Window too small"
-    exit
+if (( splashlen < columns + 10 )); then
+    for (( i=0; i<splashcols; i++ )); do
+	set_cursor $(( linestart + i )) $splashstart
+	echo -e "${splash[i]}"
+	(( linepos++ ))
+    done
+    reset_colors
+    splash_forward_line
 fi
-
-function splash_forward_line() {
-    (( linepos ++ ))
-    set_cursor $linepos $splashstart
-}
-
-for (( i=0; i<splashcols; i++ )); do
-    set_cursor $(( linestart + i )) $splashstart
-    echo -e "${splash[$i]}"
-    (( linepos++ ))
-done
-echo -e "$reset"
-
-splash_forward_line
 
 #################################################################################
 #	       Get credentials -- Encrypt and store if not found		#
@@ -882,7 +943,7 @@ hide_mode
 openssl s_client -connect "$imapdomain" -quiet -crlf <&$sendfd >&$readfd 2>/dev/null &
 sslpid=$!
 
-# Trap to kill, restore previous terminal screen/coloring on term or error
+# Trap to kill ssl pid, restore previous terminal screen/coloring on term or error
 trap "kill $sslpid; echo -en '\e[?1049l'; hide_mode_off; reset_colors" EXIT ERR
 
 #################################################################################
