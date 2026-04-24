@@ -75,6 +75,7 @@ declare -i lines  columns unreadcount firstunread lastunread linepos prevlinepos
 	termcenter splashcenter splashstart splashcols state
 declare -a unread open_message open_message_range marked_messages
 declare -a from_arr subject_arr
+declare -A folder
 
 popup_html_warn=("╔═══════════════════════════╗"
                  "║ HTML is not yet supported ║"
@@ -87,6 +88,10 @@ popup_reloading=("╔═══════════════════�
 popup_window_too_small=("╔══════════════════╗"
 			"║ Window too small ║"
 			"╚══════════════════╝")
+
+popup_deleting_messages=("╔═══════════════════╗"
+			 "║ Deleting Messages ║"
+			 "╚═══════════════════╝")
 
 ##################################################################################
 #			   CURSOR AND SCREEN CONTROLS				 #
@@ -290,6 +295,27 @@ function clearfifo() {
     done <&$readfd
 }
 
+function get_folders() {
+    # Store the server's folder names in an associative array for
+    # easy access when needed
+    [[ "$email" =~ "gmail.com" ]] && folder[archived]="\"[Gmail]All Mail\""
+    echo "$A LIST \"\" \"*\"" >&$sendfd # Response is a list of all folders
+    while read -r line; do
+	[[ "$line" =~ OK.*Success ]] && break
+	[[ "$line" =~ BAD ]] && echo "Failed to get folders" && break
+	[[ "$line" =~ \"INBOX\" ]] && continue
+	if [[ "$line" =~ .*Archive.*|.*Archived.* ]]; then
+	    folder[archived]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	fi
+	if [[ "$line" =~ .*\\Trash.* ]]; then
+	    folder[trash]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	fi
+	if [[ "$line" =~ .*\\Junk.* ]]; then
+	    folder[junk]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	fi
+    done <&$readfd
+}
+	   
 function get_unread_messages() {
     # Send request to server for list of unread message IDs
     # Store in array $unread
@@ -359,17 +385,17 @@ function fetch_header_field() {
 		# From and Subject can come in random order, so check both possibilities
 		if [[ "$body" =~ $regex1 || "$body" =~ $regex2 ]]; then
 		    regval="${breg[1]//[$'\n'|\"]/}"
-		    regex1="^([^\<]*)"
-		    regex2="^(\<.*\>)"
+		    regex1="^[[:space:]]?([^\<]*)"
+		    regex2="^[[:space:]]?(\<.*\>)"
 		    if [[ "$regval" =~ $regex1 || "$regval" =~ $regex2 ]]; then
-			from_arr[i]=${breg[1]//[<>]/}
+			from_arr[i]=${breg[1]//[<>$'\r'$'\n']/}
 		    else
 			from_arr[i]=$regval
 		    fi
 		    regex1="Subject: (.*)From"
 		    regex2="Subject: (.*)"
 		    if [[ "$body" =~ $regex1 || "$body" =~ $regex2 ]]; then
-			subject_arr[i]="${breg[1]//[$'\n'|\"]/}"
+			subject_arr[i]="${breg[1]//[$'\n'|\"|$'\r']/}"
 		    fi
 		    (( i++ ))
 		fi
@@ -491,7 +517,7 @@ function set_bottom_bar() {
     for (( i=0; i<bottom_unused_cols; i++ )); do
 	echo -n " "
     done
-    set_cursor $linepos 1
+    set_cursor $linepos 0
 }
 
 function update_bottom_bar() {
@@ -611,6 +637,9 @@ function unread_nav_mode() {
 		;;
 	    m)
 		mark_message
+		;;
+	    d)
+		delete_marked_messages
 		;;
 	    "")
 		get_mime_structure unread
@@ -744,7 +773,7 @@ function decode_b64() {
     # Group 1: Plain text before first "=?"
     # Group 2: Base 64 encoded text found after "=?UTF-8?B?" and before "?="
     # Group 3: Any text after "?=" except if it starts with a space or "<"
-    if [[ "$full_string" =~ ^([^=]*)=\?.{5}\?B\?([^\?]{1,})\?=([^\<[:space:]]*) ]]; then
+    if [[ "$full_string" =~ ^[[:space:]]?([^=]*)=\?.{5}\?B\?([^\?]{1,})\?=([^\<[:space:]]*) ]]; then
 	plain_pre="${breg[1]}"
 	plain_post="${breg[3]}"
 	encoded="${breg[2]//$'\n'/}"
@@ -774,7 +803,7 @@ function decode_qp() {
     # Header QP. $2 Passes in an index from an array
     elif [[ "$1" == "--header" ]]; then
 	string="${2//$'\n'/}"
-	[[ "$string" =~ ^[^=]* && ${#breg} -gt 0 ]] && string_pre_qp="$breg"
+	[[ "$string" =~ ^[[:space:]]?([^=]*) && ${#breg} -gt 0 ]] && string_pre_qp="$breg[1]"
 	[[ "$string" =~ ^.*=\?.{5}\?Q\?(.*)\?= ]] && string_qp="${breg[1]//$'\n'/}"
 	if [[ -v string_qp && ${#string_qp} -gt 0 ]]; then
 	    regex="=([A-Za-z0-9]{2})"
@@ -860,6 +889,26 @@ function unmark_message() {
     reset_colors
     echo -n " "
     set_cursor $linepos 0
+}
+
+function delete_marked_messages() {
+    clearfifo
+    marked_str=$(echo "${marked_messages[*]}"|tr ' ' ','|tr -d '\r')
+    echo "$A MOVE $marked_str ${folder[trash]}" >&$sendfd
+    draw_popup popup_deleting_messages
+    while read -r line; do
+	if [[ "$line" =~ .*Success.* ]]; then
+	    break
+	fi
+    done <&$readfd
+    reset_indexes marked_messages
+    reload_unread
+}
+
+function sort_array() {
+    local -n arr=$1
+    readarray -t sorted < <(printf '%s\n' "${arr[@]}"|sort -n)
+    echo "${sorted[*]}"
 }
 
 #######################################################################
@@ -962,6 +1011,7 @@ while read -rs line; do
 	"$A"*"OK"*"Success"*) # Response to $A LOGIN
 	    hide_mode_off
 	    echo "Successfully logged in"
+	    unset pass
 	    splash_forward_line
 	    hide_mode
 	    break
@@ -977,6 +1027,7 @@ while read -rs line; do
     esac
 done <&$readfd
 
+get_folders
 get_unread_messages
 fetch_header_field "$unread_str"
 parse_headers
