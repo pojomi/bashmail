@@ -53,6 +53,8 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 - `^N`/`^P` are bound to the same actions as `j`/`k`
 - `f`/`b` (message-view only) forward/back one full page
 - `r` (unread tab only) reload unread messages
+- `m` (unread tab only) mark message for deletion
+- `d` (unread tab only) delete all marked messages
 - `return`/`enter` to open focused message
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
