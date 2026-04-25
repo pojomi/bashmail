@@ -67,6 +67,7 @@ Completed tasks will be rewritten with strikethrough style when completed. New t
 
 - ~~Archive/delete support~~
 - "Inbox" tab to view all messages in new-old sorting
+- Dynamic tracking window resize
 - Receive date to entries
 - Add maximum allowable size to messages retrieved from IMAP server
 - SMTP support to allow replying with plain text
