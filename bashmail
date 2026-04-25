@@ -77,66 +77,6 @@ declare -a unread open_message open_message_range marked_messages
 declare -a from_arr subject_arr
 declare -A folder
 
-# Unicode quick-copy for boxes:
-# ╔═══════════════════════════╗
-# ║                           ║
-# ╚═══════════════════════════╝
-
-popup_html_warn=("╔═══════════════════════════╗"
-                 "║ HTML is not yet supported ║"
-		 "╚═══════════════════════════╝")
-
-popup_reloading=("╔═══════════════════════════╗"
-		 "║ Reloading Unread Messages ║"
-		 "╚═══════════════════════════╝")
-
-popup_window_too_small=("╔══════════════════╗"
-			"║ Window too small ║"
-			"╚══════════════════╝")
-
-popup_deleting_messages=("╔═══════════════════╗"
-			 "║ Deleting Messages ║"
-			 "╚═══════════════════╝")
-
-popup_archiving_messages=("╔════════════════════╗"
-			  "║ Archiving Messages ║"
-			  "╚════════════════════╝")
-
-popup_failed_login=("╔═════════════════╗"
-		    "║ Failed to login ║"
-		    "╚═════════════════╝")
-
-popup_failed_headers=("╔═════════════════════════════════╗"
-		      "║ Failed to get message headers   ║"
-		      "║            Exiting              ║"
-		      "╚═════════════════════════════════╝")
-
-popup_failed_mime=("╔═════════════════════════════════╗"
-		   "║ Failed to get message structure ║"
-		   "╚═════════════════════════════════╝")
-
-popup_failed_folders=("╔══════════════════════════════╗"
-		      "║     Failed to get folders    ║"
-		      "║ Only inbox will be available ║"
-		      "╚══════════════════════════════╝")
-
-popup_failed_inbox=("╔════════════════════════════╗"
-		    "║    Failed to get inbox     ║"
-		    "║          Exiting           ║"
-		    "╚════════════════════════════╝")
-
-popup_failed_message=("╔════════════════════════╗"
-		      "║ Failed to open message ║"
-		      "╚════════════════════════╝")
-
-popup_failed_delete=("╔═══════════════════════════╗"
-		     "║ Error deleting message(s) ║"
-		     "╚═══════════════════════════╝")
-
-popup_failed_archive=("╔════════════════════════════╗"
-		      "║ Error archiving message(s) ║"
-		      "╚════════════════════════════╝")
-
 ##################################################################################
 #			   CURSOR AND SCREEN CONTROLS				 #
 ##################################################################################
@@ -346,7 +286,7 @@ function get_folders() {
     echo "$A LIST \"\" \"*\"" >&$sendfd # Response is a list of all folders
     while read -r line; do
 	[[ "$line" =~ " OK " ]] && break
-	[[ "$line" =~ " BAD "|" NO " ]] && draw_popup popup_failed_folders --warn && break
+	[[ "$line" =~ " BAD "|" NO " ]] && draw_popup --warn "Failed to get folders\nInbox/Unread available" && break
 	if [[ "$line" =~ \"[Aa]rchive\"|\"[Aa]rchived\" ]]; then
 	    folder[archived]="${breg//[$'\n'|$'\r']/}"
 	fi
@@ -377,7 +317,7 @@ function get_unread_messages() {
 		hide_mode
 		break
 	    elif [[ "$line" =~ " BAD "|" NO " ]]; then
-		draw_popup popup_failed_inbox --error
+		draw_popup --error "Failed to open inbox"
 		exit
 	    fi
 	done <&$readfd
@@ -425,7 +365,7 @@ function fetch_header_field() {
     i=0
     while read -rs line; do
 	if [[ "$line" =~ " OK " ]]; then break; fi
-	if [[ "$line" =~ " BAD "|" NO " ]]; then draw_popup popup_failed_headers --error; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then draw_popup --error "Failed to retrieve headers"; fi
 	# Bytes are found on first line in "{0-9}"
 	if [[ "$line" =~ \{[0-9]+\} ]]; then
 	    local -i bytes
@@ -473,42 +413,79 @@ function parse_headers() {
 }
 
 function draw_popup() {
-    # $1 popup array box var name (no "$")
-    # $2 flag for type of popup; Currently only "--warn"
+    # Args: flags precede strings
+    # --[warn|error] --[reload] "[text]"
+    if [[ "$1" =~ \".*\" && "$2" =~ "--.*" ]]; then echo "Invalid format"; sleep 1.5s; return; fi
     args=("$@")
-    local -n arr=$1
-    box_len=${#arr[0]}
-    box_lines=${#arr[@]}
-    box_line_center=$(( box_lines / 2))
-    box_col_center=$(( box_len / 2))
-    tty_start_col=$(( columns / 2 - box_col_center ))
-    tty_start_line=$(( lines / 2 - box_line_center ))
-
-    hide_cursor
-    reset_colors
-    if [[ "${args[@]:1}" =~ "--warn" ]]; then
-	echo -en "$Ybg$Black$Bold"
-    elif [[ "${args[@]:1}" =~ "--error" ]]; then
-	echo -en "$Rbg$Black$Bold"
-    else
-	echo -en "$Gbg$Black$Bold"
-    fi
-    for (( i=0;i<box_lines;i++ )); do
-	set_cursor $tty_start_line $tty_start_col
-	(( tty_start_line++ ))
-	echo -en "${arr[i]}"
+    local -i longest_line longest_line_center box_rows box_columns box_center\
+	  tty_start_col tty_start_line
+    local warn_colors error_colors default_colors colors
+    warn_colors="$Ybg$Black$Bold"
+    error_colors="$Rbg$Black$Bold"
+    default_colors="$Gbg$Black$Bold"
+    
+    case "$args" in
+	*"--error"*) colors="$error_colors";;
+	*"--warn"*) colors="$warn_colors";;
+	*) colors="$default_colors";;
+    esac
+    
+    IFS=$'\n'
+    local -a message=($(echo -e "${!#}")) # If multiline, store lines in indexes
+    unset IFS
+    # Find longest line from message
+    longest_line=${#message[0]}
+    for (( i=0;i<${#message[@]};i++ )); do
+	if (( longest_line <= ${#message[i]} )); then
+	    longest_line=${#message[i]}
+	fi
     done
-    if [[ "${args[@]:1}" =~ "--error" ]]; then
-	sleep 3s
-	exit
-    elif [[ "${args[@]:1}" =~ "--reload" ]]; then
-	# Any keypress will close or 3s timeout
-	read -rn 1 -t 3
+    longest_line_center=$(( longest_line / 2 ))
+    box_columns=$(( longest_line + 4 )) # Add 2 for border, 2 for whitespace on ends
+    box_rows=$(( 2 + ${#message[@]} ))
+    box_center=$(( box_columns / 2 ))
+    tty_start_col=$(( columns / 2 - box_center ))
+    tty_start_line=$(( lines / 2 - box_rows ))
+    set_cursor $tty_start_line $tty_start_col
+    reset_colors
+    echo -en "$colors"
+    for (( i=0;i<box_rows;i++ )); do
+	line_len=${#message[i-1]}
+	line_center=$(( line_len / 2 ))
+	text_start_col=$(( longest_line_center - line_center + (line_len % 2) ))
+	text_end_col=$(( text_start_col + line_len ))
+	# Top Row
+	if (( i == 0 )); then
+	    echo -n "╔"
+	    for (( j=0;j<box_columns-2;j++ )); do echo -n "═"; done
+	    echo -n "╗"
+	fi
+	# Inner Rows
+	if (( i != 0 && i != box_rows-1 )); then
+	    echo -n "║"
+	    for (( j=0;j<text_start_col;j++ )); do
+		echo -n " "
+	    done
+	    echo -n "${message[i-1]}"
+	    for (( j=0;j<box_columns-2-text_end_col;j++ )); do echo -n " "; done
+	    echo -n "║"
+	fi
+	# Bottom Row
+	if (( i == box_rows-1 )); then
+	    echo -n "╚"
+	    for (( j=0;j<box_columns-2;j++ )); do echo -n "═"; done
+	    echo -n "╝"
+	fi
+	(( tty_start_line++ ))
+	set_cursor $tty_start_line $tty_start_col
+    done
+    if [[ "${args[@]:1}" =~ "--reload" ]]; then
+	# Any keypress will close or 1.5s timeout
+	read -rn 1 -t 1.5
 	reload_unread
     fi
     reset_colors
 }
-    
 
 function draw_unread() {
     # Clear the terminal
@@ -683,7 +660,7 @@ function unread_nav_mode() {
 		inbox_list_backward
 		;;
 	    r)
-		draw_popup popup_reloading
+		draw_popup "Reloading unread messages"
 		reload_unread
 		;;
 	    j)
@@ -702,6 +679,7 @@ function unread_nav_mode() {
 		delete_marked_messages
 		;;
 	    "")
+		draw_popup "Opening message"
 		get_mime_structure unread
 		;;
 	    "")
@@ -777,7 +755,7 @@ function get_mime_structure() {
     echo "$A FETCH $selected_message BODYSTRUCTURE" >&$sendfd
     while read -r line; do
 	if [[ "$line" =~ " OK " ]]; then break; fi
-	if [[ "$line" =~ " BAD "|" NO " ]]; then draw_popup popup_failed_mime --warn --reload; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then draw_popup --warn --reload "Failed to get message structure"; fi
 	response+="$line"
     done <&$readfd
     # [1] is the parens. [2] is the format. [3] is the rest of the container.
@@ -794,7 +772,7 @@ function get_mime_structure() {
 	(( paren_count == 1 )) && structure[leaf]="1"
     fi
     if [[ "${structure[format]}" =~ "[Hh][Tt][Mm][Ll]" ]]; then
-	draw_popup popup_html_warn --warn --reload
+	draw_popup --warn --reload "HTML is not yet supported"
 	return
     fi
 
@@ -812,7 +790,7 @@ function get_message() {
     while read -r line; do
 	if [[ "$line" =~ " OK " ]]; then break; fi
 	if [[ "$line" =~ " BAD "|" NO " ]]; then
-	    draw_popup popup_failed_message --warn --reload
+	    draw_popup --warn --reload "Failed to retrieve message"
 	fi
     done <&$readfd
     while read -r line; do
@@ -961,13 +939,13 @@ function unmark_message() {
 }
 
 function archive_marked_messages() {
-    draw_popup popup_archiving_messages
+    draw_popup "Archiving selected messages"
     clearfifo
     echo "$A MOVE $marked_str ${folder[archived]}" >&$sendfd
     while read -r line; do
 	if [[ "$line" =~ " OK " ]]; then break; fi
 	if [[ "$line" =~ " BAD "|" NO " ]]; then
-	    draw_popup popup_failed_archive --warn --reload
+	    draw_popup --warn --reload "Failed to archive messages"
 	    return
 	fi
     done <&$readfd
@@ -976,13 +954,13 @@ function archive_marked_messages() {
 }
 
 function delete_marked_messages() {
-    draw_popup popup_deleting_messages
+    draw_popup "Deleting selected messages"
     clearfifo
     echo "$A MOVE $marked_str ${folder[trash]}" >&$sendfd
     while read -r line; do
 	if [[ "$line" =~ .*Success.*|" OK " ]]; then break; fi
 	if [[ "$line" =~ " BAD "|" NO " ]]; then
-	    draw_popup popup_failed_delete --warn --reload
+	    draw_popup --warn --reload "Failed to delete messages"
 	    return
 	fi
     done <&$readfd
@@ -1107,7 +1085,7 @@ while read -rs line; do
 	    ;;
 	*"BAD"*|*"NO"*) # Failed response of any kind
 	    rm "$passenc" "$emailenc"
-	    draw_popup popup_failed_login --error
+	    draw_popup --error "Failed to login"
 	    ;;
 	*)
 	    continue
