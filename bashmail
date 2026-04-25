@@ -70,7 +70,7 @@ readssl="/var/tmp/readssl.log"
 
 A="A"
 
-declare unreadstr bottom_text mode
+declare unread_str bottom_text mode marked_str
 declare -i lines  columns unreadcount firstunread lastunread linepos prevlinepos bottomline\
 	termcenter splashcenter splashstart splashcols state
 declare -a unread open_message open_message_range marked_messages
@@ -98,6 +98,10 @@ popup_deleting_messages=("╔═════════════════
 			 "║ Deleting Messages ║"
 			 "╚═══════════════════╝")
 
+popup_archiving_messages=("╔════════════════════╗"
+			  "║ Archiving Messages ║"
+			  "╚════════════════════╝")
+
 popup_failed_login=("╔═════════════════╗"
 		    "║ Failed to login ║"
 		    "╚═════════════════╝")
@@ -120,6 +124,18 @@ popup_failed_inbox=("╔══════════════════�
 		    "║    Failed to get inbox     ║"
 		    "║          Exiting           ║"
 		    "╚════════════════════════════╝")
+
+popup_failed_message=("╔════════════════════════╗"
+		      "║ Failed to open message ║"
+		      "╚════════════════════════╝")
+
+popup_failed_delete=("╔═══════════════════════════╗"
+		     "║ Error deleting message(s) ║"
+		     "╚═══════════════════════════╝")
+
+popup_failed_archive=("╔════════════════════════════╗"
+		      "║ Error archiving message(s) ║"
+		      "╚════════════════════════════╝")
 
 ##################################################################################
 #			   CURSOR AND SCREEN CONTROLS				 #
@@ -326,20 +342,23 @@ function clearfifo() {
 function get_folders() {
     # Store the server's folder names in an associative array for
     # easy access when needed
-    [[ "$email" =~ "gmail.com" ]] && folder[archived]="\"[Gmail]All Mail\""
+    [[ "$email" =~ "gmail.com" ]] && folder[archived]="\"[Gmail]/All Mail\""
     echo "$A LIST \"\" \"*\"" >&$sendfd # Response is a list of all folders
     while read -r line; do
 	[[ "$line" =~ " OK " ]] && break
 	[[ "$line" =~ " BAD "|" NO " ]] && draw_popup popup_failed_folders --warn && break
-	[[ "$line" =~ \"INBOX\" ]] && continue
-	if [[ "$line" =~ .*Archive.*|.*Archived.* ]]; then
-	    folder[archived]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	if [[ "$line" =~ \"[Aa]rchive\"|\"[Aa]rchived\" ]]; then
+	    folder[archived]="${breg//[$'\n'|$'\r']/}"
 	fi
-	if [[ "$line" =~ .*\\Trash.* ]]; then
-	    folder[trash]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	if [[ "$line" =~ \\Trash[^\"]*\"[^\"]*\"[^\"]*(\".*\") ]]; then
+	    folder[trash]="${breg[1]//[$'\n'|$'\r']/}"
 	fi
-	if [[ "$line" =~ .*\\Junk.* ]]; then
-	    folder[junk]=$(echo "$breg"|awk '{print $NF}'|tr -d '\r')
+	if [[ "$line" =~ \\Junk[^\"]*\"[^\"]*\"[^\"]*(\".*\")|(\"[Jj]unk\") ]]; then
+	    if [[ -n "${breg[1]}" ]]; then
+		folder[junk]="${breg[1]//[$'\n'|$'\r']/}"
+	    elif [[ -n "${breg[2]}" ]]; then
+		folder[junk]="${breg[2]//[$'\n'|$'\r']/}"
+	    fi
 	fi
     done <&$readfd
 }
@@ -376,7 +395,9 @@ function get_unread_messages() {
 	fi
 	if [[ "$line" =~ SEARCH" "([0-9].*) ]]; then
 	    id_str="${breg[1]//$'\r'/}"
-	    unread=($(echo "${id_str// /$'\n'}"))
+	    IFS=" "
+	    unread+=($(echo -n "${id_str//[$'\r'|$'\n']/}"))
+	    unset IFS
 	    unread_str="${id_str// /,}"
 	    unreadcount=${#unread[@]}
 	    # Store the terminal line numbers
@@ -528,7 +549,7 @@ function reload_unread() {
     fetch_header_field "$unread_str"
     parse_headers
     draw_unread
-    set_bottom_bar
+#    set_bottom_bar
     highlight
 }
 
@@ -569,7 +590,7 @@ function update_bottom_bar() {
 	    done
 	fi
 	echo -en "$Rbg$Black$Bold $bottom_text"
-	set_cursor $linepos 1
+	set_cursor $linepos 0
     fi
 }
 
@@ -674,6 +695,9 @@ function unread_nav_mode() {
 	    m)
 		mark_message
 		;;
+	    a)
+		archive_marked_messages
+		;;
 	    d)
 		delete_marked_messages
 		;;
@@ -752,8 +776,8 @@ function get_mime_structure() {
     structure[encoding]="none"
     echo "$A FETCH $selected_message BODYSTRUCTURE" >&$sendfd
     while read -r line; do
-	if [[ "$line" =~ OK.*Success ]]; then break; fi
-	if [[ "$line" =~ BAD ]]; then draw_popup popup_failed_mime --warn --reload; fi
+	if [[ "$line" =~ " OK " ]]; then break; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then draw_popup popup_failed_mime --warn --reload; fi
 	response+="$line"
     done <&$readfd
     # [1] is the parens. [2] is the format. [3] is the rest of the container.
@@ -762,14 +786,14 @@ function get_mime_structure() {
 	structure[format]="${breg[2]}"
 	container="${breg[*]:2:2}"
     fi
-    [[ "$container" =~ "QUOTED-PRINTABLE" ]] && structure[encoding]="qp"
+    [[ "$container" =~ "[Qq][Uu][Oo][Tt][Ee][Dd]-[Pp][Rr][Ii][Nn][Tt][Aa][Bb][Ll][Ee]" ]] && structure[encoding]="qp"
     if (( ${#parens} > 0 )); then
 	paren_count=$(( ${#parens}-1 ))
 	(( paren_count == 3 )) && structure[leaf]="1.1.1"
 	(( paren_count == 2 )) && structure[leaf]="1.1"
 	(( paren_count == 1 )) && structure[leaf]="1"
     fi
-    if [[ "${structure[format]}" =~ HTML ]]; then
+    if [[ "${structure[format]}" =~ "[Hh][Tt][Mm][Ll]" ]]; then
 	draw_popup popup_html_warn --warn --reload
 	return
     fi
@@ -785,6 +809,12 @@ function get_message() {
     read -r bytes <&$readfd
     [[ "$bytes" =~ \{([0-9]{1,})\} ]] && bytes="${breg[1]}"
     read -rN $bytes message <&$readfd
+    while read -r line; do
+	if [[ "$line" =~ " OK " ]]; then break; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then
+	    draw_popup popup_failed_message --warn --reload
+	fi
+    done <&$readfd
     while read -r line; do
 	open_message[count]="$line"
 	(( count++ ))
@@ -913,6 +943,8 @@ function mark_message() {
 	marked_messages+=("${unread[index]}")
 	draw_marked_symbol
     fi
+    local arr_str="${marked_messages[*]}"
+    marked_str="${arr_str// /,}"
 }
 
 function draw_marked_symbol() {
@@ -928,14 +960,30 @@ function unmark_message() {
     set_cursor $linepos 0
 }
 
+function archive_marked_messages() {
+    draw_popup popup_archiving_messages
+    clearfifo
+    echo "$A MOVE $marked_str ${folder[archived]}" >&$sendfd
+    while read -r line; do
+	if [[ "$line" =~ " OK " ]]; then break; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then
+	    draw_popup popup_failed_archive --warn --reload
+	    return
+	fi
+    done <&$readfd
+    reset_indexes marked_messages
+    reload_unread
+}
+
 function delete_marked_messages() {
     draw_popup popup_deleting_messages
     clearfifo
-    marked_str=$(echo "${marked_messages[*]}"|tr ' ' ','|tr -d '\r')
     echo "$A MOVE $marked_str ${folder[trash]}" >&$sendfd
     while read -r line; do
-	if [[ "$line" =~ .*Success.* ]]; then
-	    break
+	if [[ "$line" =~ .*Success.*|" OK " ]]; then break; fi
+	if [[ "$line" =~ " BAD "|" NO " ]]; then
+	    draw_popup popup_failed_delete --warn --reload
+	    return
 	fi
     done <&$readfd
     reset_indexes marked_messages
