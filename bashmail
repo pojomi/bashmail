@@ -2,7 +2,7 @@
 
 # Save the terminal's screen prior to launching app
 echo -en '\e[?1049h'
-
+shopt -s extglob
 #################################################################################
 #				      VARS					#
 #################################################################################
@@ -73,7 +73,7 @@ A="A"
 declare unread_str bottom_text mode marked_str
 declare -i lines  columns unreadcount firstunread lastunread linepos prevlinepos bottomline\
 	termcenter splashcenter splashstart splashcols state
-declare -a unread open_message open_message_range marked_messages
+declare -a unread unread_range open_message open_message_range marked_messages
 declare -a from_arr subject_arr
 declare -A folder
 
@@ -342,7 +342,7 @@ function get_unread_messages() {
 	    unreadcount=${#unread[@]}
 	    # Store the terminal line numbers
 	    firstunread=2
-	    lastunread=$(( unreadcount * 2))
+	    lastunread=$(( unreadcount * 2 ))
 	    linepos=2
 	    prevlinepos=0
 	fi
@@ -386,7 +386,7 @@ function fetch_header_field() {
 		    regex1="[Ss]ubject: (.*)[Ff]rom"
 		    regex2="[Ss]ubject: (.*)"
 		    if [[ "$body" =~ $regex1 || "$body" =~ $regex2 ]]; then
-			subject_arr[i]="${breg[1]//[$'\n'|\"|$'\r']/}"
+			subject_arr[i]="${breg[1]//[$'\n'\"$'\r']/}"
 		    fi
 		    (( i++ ))
 		fi
@@ -764,14 +764,14 @@ function get_mime_structure() {
 	structure[format]="${breg[2]}"
 	container="${breg[*]:2:2}"
     fi
-    [[ "$container" =~ "[Qq][Uu][Oo][Tt][Ee][Dd]-[Pp][Rr][Ii][Nn][Tt][Aa][Bb][Ll][Ee]" ]] && structure[encoding]="qp"
+    [[ "$container" =~ Quoted-Printable|QUOTED-PRINTABLE ]] && structure[encoding]="qp"
     if (( ${#parens} > 0 )); then
 	paren_count=$(( ${#parens}-1 ))
 	(( paren_count == 3 )) && structure[leaf]="1.1.1"
 	(( paren_count == 2 )) && structure[leaf]="1.1"
 	(( paren_count == 1 )) && structure[leaf]="1"
     fi
-    if [[ "${structure[format]}" =~ "[Hh][Tt][Mm][Ll]" ]]; then
+    if [[ "${structure[format]}" =~ [Hh][Tt][Mm][Ll] ]]; then
 	draw_popup --warn --reload "HTML is not yet supported"
 	return
     fi
@@ -799,6 +799,7 @@ function get_message() {
     done < <(echo "$message")
     if [[ "${struct[encoding]}" == "none" ]]; then
 	parse_plain_links
+	parse_html
 	message_cleanup_whitespace
 	print_message
     elif [[ "${struct[encoding]}" == "qp" ]]; then
@@ -849,7 +850,7 @@ function decode_qp() {
     elif [[ "$1" == "--header" ]]; then
 	string="${2//$'\n'/}"
 	[[ "$string" =~ ^" "?([^=]*) && ${#breg} -gt 0 ]] && string_pre_qp="$breg[1]"
-	[[ "$string" =~ ^.*=\?.{5}\?Q\?(.*)\?= ]] && string_qp="${breg[1]//$'\n'/}"
+	[[ "$string" =~ " "?[^=]*=\?.{5}\?Q\?(.*)\?= ]] && string_qp="${breg[1]//@(=\?UTF-8\?Q\?|\?=|$'\n')/}"
 	if [[ -v string_qp && ${#string_qp} -gt 0 ]]; then
 	    regex="=([A-Za-z0-9]{2})"
 	    qp_message=$(echo "$string_qp"|sed -r "s/_/ /g; s/$regex/\\\x\1/g")
