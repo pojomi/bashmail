@@ -62,6 +62,7 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Known Issues
 - Some messages will return with little to no text after all the parsing is finished
 - QP messages sometimes have leftover `)` after parsing hyperlinks
+- Unread messages tab is not set up for paging yet. Causes printing issues if there are more unread messages than there are lines available
 # Roadmap
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
