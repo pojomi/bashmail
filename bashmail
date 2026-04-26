@@ -71,10 +71,10 @@ readssl="/var/tmp/readssl.log"
 A="A"
 
 declare unread_str bottom_text mode marked_str
-declare -i lines  columns unreadcount firstunread lastunread linepos prevlinepos bottomline\
+declare -i lines  columns unreadcount firstunread last_linepos linepos prevlinepos bottomline\
 	termcenter splashcenter splashstart splashcols state
-declare -a unread unread_range open_message open_message_range marked_messages
-declare -a from_arr subject_arr
+declare -a unread unread_range open_message open_message_range marked_messages from_arr\
+	subject_arr header_arr
 declare -A folder
 
 ##################################################################################
@@ -342,7 +342,8 @@ function get_unread_messages() {
 	    unreadcount=${#unread[@]}
 	    # Store the terminal line numbers
 	    firstunread=2
-	    lastunread=$(( unreadcount * 2 ))
+	    # The final line position of index 0 header_arr
+	    last_linepos=$(( unreadcount * 2 ))
 	    linepos=2
 	    prevlinepos=0
 	fi
@@ -393,7 +394,7 @@ function fetch_header_field() {
 	    fi
 	fi
     done <&$readfd
-}
+}    
 
 function parse_headers() {
     for (( i=0;i<unreadcount;i++ )); do
@@ -411,6 +412,23 @@ function parse_headers() {
 	fi
     done
 }
+
+function combine_headers() {
+    # After parsing, join $from_arr and $subject_arr into one array ($header_arr)
+    # Alternating indexes. (Ex: 0 is From, 1 is Subject, 2 is From, 3 is Subject)
+    if (( ${#from_arr[@]} == ${#subject_arr[@]} )); then
+	local -i indexes=$(( ${#from_arr[@]} + ${#subject_arr[@]} ))
+	local -i j=0
+	for (( i=0;i<indexes;i+=2 )); do
+	    header_arr[i]="${from_arr[-1]}"
+	    unset from_arr[-1]
+	    header_arr[i+1]="${subject_arr[-1]}"
+	    unset subject_arr[-1]
+	done
+    fi
+}
+	    
+
 
 function draw_popup() {
     # Args: flags precede strings
@@ -495,27 +513,28 @@ function draw_unread() {
     set_cursor 0 0
 
     # Add a header line
-    echo -e "$BrBlackbg  [Unread]$reset"
-
-    # Decrement to sort newest first
-    for (( i=unreadcount-1; i>-1; i-- )); do
+    echo -e "$BrBlackbg  [Unread]"
+    # mod 0 indexes are From lines
+    # mod 1 indexes are Subject lines
+    local -i j=0
+    for (( i=0; i<${#header_arr[@]}; i+=2 )); do
 	reset_colors
-	if [[ "${marked_messages[@]}" =~ "${unread[i]}" ]]; then
-	    echo -e "$W*$R${from_arr[i]}"
+	if [[ "${marked_messages[@]}" =~ "${unread[j]}" ]]; then
+	    echo -e "$W*$R${header_arr[i]}"
 	    reset_colors
-	    echo -e " $Y${subject_arr[i]}"
-	else
-	    echo -e " $R${from_arr[i]}"
-	    reset_colors
-	    echo -e " $Y${subject_arr[i]}"
+	    echo -e " $Y${header_arr[i+1]}"
+	    continue
 	fi
+	echo -e " $R${header_arr[i]}"
+	reset_colors
+	echo -e " $Y${header_arr[i+1]}"
+	(( j++ ))
     done
     set_cursor $linepos 1
 
     if [[ -n "$bottom_text" ]]; then
 	set_bottom_bar
     fi
-    mode="unread"
 }
 
 function reload_unread() {
@@ -534,7 +553,7 @@ function reload_unread() {
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
     local -i selected_line=$1
-    echo $(( (lastunread - selected_line) / 2 ))
+    echo $(( ((last_linepos - selected_line) / 2 - 1 ) ))
 }
 
 # To print the visibly highlighted index
@@ -572,30 +591,35 @@ function update_bottom_bar() {
 }
 
 function highlight() {
-    prev_msg_index=$(rel_msg_index $prevlinepos)
-    line_msg_index=$(rel_msg_index $linepos)
+    local -i prev_msg_index=$(rel_msg_index $prevlinepos)
+    local -i line_msg_index=$(rel_msg_index $linepos)
+    local -i prev_header_msg_index=$(( prevlinepos - 2 ))
+    local -i header_msg_index=$(( linepos - 2 ))
 
     if (( prevlinepos > 0 )); then
 	set_cursor $prevlinepos 0
 	reset_colors
 	if [[ "${marked_messages[@]}" =~ "${unread[prev_msg_index]}" ]]; then
-	    echo -e "$W*$R${from_arr[prev_msg_index]}"
+	    echo -e "$W*$R${header_arr[prev_header_msg_index]}"
 	else
-	    echo -e " $R${from_arr[prev_msg_index]}"
+	    echo -e " $R${header_arr[prev_header_msg_index]}"
 	fi
 	reset_colors
-	echo -e " $Y${subject_arr[prev_msg_index]}"
+	echo -e " $Y${header_arr[prev_header_msg_index+1]}"
     fi
 
     set_cursor $linepos 0
     reset_colors
     if [[ "${marked_messages[@]}" =~ "${unread[line_msg_index]}" ]]; then
-	echo -e "$W*$R$Bbg$Bold${from_arr[line_msg_index]}"
-    else
-	echo -e " $R$Bbg$Bold${from_arr[line_msg_index]}"
+	echo -e "$W*$R$Bbg$Bold${header_arr[header_msg_index]}"
+	reset_colors
+	echo -e " $Y$Bbg$Bold${header_arr[header_msg_index+1]}"
+	return
     fi
+    
+    echo -e " $R$Bbg$Bold${header_arr[header_msg_index]}"
     reset_colors
-    echo -e " $Y$Bbg$Bold${subject_arr[line_msg_index]}"
+    echo -e " $Y$Bbg$Bold${header_arr[header_msg_index+1]}"
 
     set_cursor $linepos 0
 }
@@ -614,7 +638,7 @@ function inbox_list_forward() {
     if (( unreadcount > 1 )); then
 	linesum=$(( 2 + linepos ))
 	# Wrap at last message
-	if (( linesum >= lastunread + 1 )); then
+	if (( linesum >= last_linepos + 1 )); then
 	    set_cursor $firstunread 1
 	    prevlinepos=$linepos
 	    linepos=$firstunread
@@ -635,9 +659,9 @@ function inbox_list_backward() {
 	linesum=$(( linepos - 2 ))
 	# Wrap at first message
 	if (( linesum <= firstunread - 1 )); then
-	    set_cursor $lastunread 1
+	    set_cursor $last_linepos 1
 	    prevlinepos=$linepos
-	    linepos=$lastunread
+	    linepos=$last_linepos
 	    highlight
 	    update_bottom_bar
 	else
@@ -1098,6 +1122,7 @@ get_folders
 get_unread_messages
 fetch_header_field "$unread_str"
 parse_headers
+combine_headers
 clearfifo
 hide_mode_off
 draw_unread
