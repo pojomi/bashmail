@@ -91,7 +91,7 @@ function restore_screen() {
 
 function forward_line () {
     if (( message_line_pos == lines && open_message_range[bottom] >= lines - 1)); then
-	redraw_bottom_message_line
+	redraw_bottom_message_line --message
     else
 	echo -en '\e[1E'
 	(( message_line_pos++ ))
@@ -100,7 +100,7 @@ function forward_line () {
 
 function backward_line () {
     if (( message_line_pos == 0 && open_message_range[top] > 0 )); then
-	redraw_top_message_line
+	redraw_top_message_line --message
     else
 	echo -en '\e[1F'
 	(( message_line_pos-- ))
@@ -111,27 +111,30 @@ function redraw_top_message_line() {
     # Draw a blank line at line 1
     echo -en '\e[1T'
     set_cursor 0 0
-    hide_cursor
-    #    (( message_line_pos-- ))
-    (( open_message_range[top]-- ))
-    (( open_message_range[bottom]-- ))
-    echo -en "${open_message[${open_message_range[top]}]}"
-    set_cursor 0 0
-    show_cursor
+    if [[ "$1" == "--message" ]]; then
+	hide_cursor
+	(( open_message_range[top]-- ))
+	(( open_message_range[bottom]-- ))
+	echo -en "${open_message[${open_message_range[top]}]}"
+	set_cursor 0 0
+	show_cursor
+    fi
 }
 
 function redraw_bottom_message_line() {
     # Draw a blank line at bottom line
-    if (( open_message_range[bottom] < ${#open_message[@]} - 1 )); then
-	echo -en '\e[1S'
-	set_cursor $lines 0
-	hide_cursor
-	(( open_message_range[top]++ ))
-	(( open_message_range[bottom]++ ))
-	echo -en "${open_message[${open_message_range[bottom]}]}"
-	set_cursor $lines 0
-	show_cursor
-    fi
+	if [[ "$1" == "--message" ]]; then
+	    if (( open_message_range[bottom] < ${#open_message[@]} - 1 )); then
+		echo -en '\e[1S'
+		set_cursor $lines 0
+		hide_cursor
+		(( open_message_range[top]++ ))
+		(( open_message_range[bottom]++ ))
+		echo -en "${open_message[${open_message_range[bottom]}]}"
+		set_cursor $lines 0
+		show_cursor
+	    fi
+	fi
 }
 
 function draw_previous_page() {
@@ -250,6 +253,14 @@ function erase_line() {
     echo -en '\e[2K'
 }
 
+function erase_cursor_to_line_end() {
+    echo -en '\e[0K'
+}
+
+function erase_cursor_to_screen_end() {
+    echo -en '\e[0J'
+}
+
 function erase_backwards() {
     echo -en '\e[1K'
 }
@@ -342,7 +353,7 @@ function get_unread_messages() {
 	    unreadcount=${#unread[@]}
 	    # Store the terminal line numbers
 	    firstunread=2
-	    # The final line position of index 0 unread_header_arr
+	    # The final line position of index unread_header_arr[-1]
 	    last_linepos=$(( unreadcount * 2 ))
 	    linepos=2
 	    prevlinepos=0
@@ -531,10 +542,10 @@ function draw_inbox() {
 	    reset_colors
 	    echo -e " $Y${unread_header_arr[i+1]}"
 	    (( j++ ))
-	    unread_range[bottom]=$j
 	done
+	unread_range[bottom]=$(( $i - 2 ))
 	set_cursor $linepos 1
-
+      
 	if [[ -n "$bottom_text" ]]; then
 	    set_bottom_bar
 	fi
@@ -562,7 +573,7 @@ function rel_msg_index() {
 
 # To print the visibly highlighted index
 function bottom_msg_at_cursor() {
-    echo $(( linepos / 2 ))
+    echo $(( (unread_range[top] + linepos) / 2 ))
 }
 
 function set_bottom_bar() {
@@ -579,17 +590,19 @@ function set_bottom_bar() {
 
 function update_bottom_bar() {
     if (( unreadcount > 1 )); then
+	reset_colors
 	hide_cursor
-	bottom_text_len=${#bottom_text}
+	local -i bottom_text_len=${#bottom_text}
 	set_cursor $bottomline 1
 	bottom_text="($(bottom_msg_at_cursor)/$unreadcount)"
-	bottom_text_diff=$(( bottom_text_len - ${#bottom_text} ))
+	local -i bottom_text_diff=$(( bottom_text_len - ${#bottom_text} ))
 	if (( bottom_text_diff > 0 )); then
 	    for (( i=0; i<bottom_text_diff; i++ )); do
 		bottom_text+=" "
 	    done
 	fi
 	echo -en "$Rbg$Black$Bold $bottom_text"
+	reset_colors
 	set_cursor $linepos 0
     fi
 }
@@ -603,12 +616,14 @@ function highlight() {
     if (( prevlinepos > 0 )); then
 	set_cursor $prevlinepos 0
 	reset_colors
+	erase_line
 	if [[ "${marked_messages[@]}" =~ "${unread[prev_msg_index]}" ]]; then
 	    echo -e "$W*$R${unread_header_arr[prev_header_msg_index]}"
 	else
 	    echo -e " $R${unread_header_arr[prev_header_msg_index]}"
 	fi
 	reset_colors
+	erase_line
 	echo -e " $Y${unread_header_arr[prev_header_msg_index+1]}"
     fi
 
@@ -627,6 +642,38 @@ function highlight() {
 
     set_cursor $linepos 0
 }
+
+function redraw_bottom_inbox_line() {
+    # When scrolling in unread/inbox, unhighlight the previous max line
+    # and highlight the new max line
+    # Args are flags only "--unread", **TODO** "--inbox"
+    if [[ "$1" == "--unread" ]]; then
+	# &&'ing to help eliminate line count
+	(( unread_range[top]+= 2 ))
+	echo -en '\e[1S\e[1S' # Insert 2 blank lines at bottom of screen
+	reset_colors
+	set_cursor $prevlinepos 0 && erase_cursor_to_screen_end
+	# Update marks because user may be scrolling pages and marking
+	local -i prev_msg_index=$(( unread_range[bottom] / 2 ))
+	if [[ "${marked_messages[@]}" =~ "${unread[prev_msg_index]}" ]]; then
+	    echo -e "$W*$R${unread_header_arr[unread_range[bottom]]}" && reset_colors
+	else
+	    echo -e " $R${unread_header_arr[unread_range[bottom]]}" && reset_colors
+	fi
+	echo -e " $Y${unread_header_arr[unread_range[bottom]+1]}" && reset_colors
+	(( unread_range[bottom]+= 2 ))
+
+	local -i line_msg_index=$(( unread_range[bottom] / 2 ))
+	if [[ "${marked_messages[@]}" =~ "${unread[line_msg_index]}" ]]; then
+	    echo -e "$W*$R$Bbg$Bold${unread_header_arr[header_msg_index]}" && reset_colors
+	else
+	    echo -e " $R$Bbg$Bold${unread_header_arr[unread_range[bottom]]}" && reset_colors
+	fi
+	echo -en " $Y$Bbg$Bold${unread_header_arr[unread_range[bottom]+1]}" && reset_colors
+	set_cursor $linepos 0
+    fi
+}
+	
 
 
 ##################################################################################
@@ -650,15 +697,15 @@ function inbox_list_forward() {
 		linepos=$firstunread
 		highlight
 		update_bottom_bar
-	    elif (( linesum >= bottomline && unreadcount > max_shown )); then
+	    # Only redraw bottom line when the last 2 indexes of
+	    # unread_header_arr != unread_range[bottom]
+	    elif (( linesum >= bottomline && unread_range[bottom] < ${#unread_header_arr[@]}-2 )); then
+		prevlinepos=$(( max_inbox_line - 2 ))
+		linepos=$max_inbox_line
+		redraw_bottom_inbox_line --unread
 		# TODO
-		# Placeholder
-		set_cursor $firstunread 1
-		prevlinepos=$linepos
-		linepos=$firstunread
-		highlight
 		update_bottom_bar
-	    else
+	    elif (( linesum < bottomline )); then
 		set_cursor $linesum 1
 		prevlinepos=$linepos
 		(( linepos += 2 ))
