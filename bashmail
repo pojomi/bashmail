@@ -531,7 +531,7 @@ function draw_inbox() {
 	local -i unread_index
 	for (( i=unread_range[top];i<unread_range[bottom]+2;i+=2 )); do
 	    reset_colors
-	    unread_index=$(rel_header_index $i)
+	    unread_index=$(rel_msg_index $i)
 	    if [[ "${marked_messages[@]}" =~ "${unread[unread_index]}" ]]; then
 		echo -e "$W*$R${unread_header_arr[i]}"; reset_colors
 		echo -e " $Y${unread_header_arr[i+1]}";
@@ -555,12 +555,6 @@ function draw_inbox() {
 	prev_index=0
 	for (( i=0; i<inbox_lines; i+=2 )); do
 	    reset_colors
-	    if [[ "${marked_messages[@]}" =~ "${unread[j]}" ]]; then
-		echo -e "$W*$R${unread_header_arr[i]}"
-		reset_colors
-		echo -e " $Y${unread_header_arr[i+1]}"
-		continue
-	    fi
 	    echo -e " $R${unread_header_arr[i]}"
 	    reset_colors
 	    echo -e " $Y${unread_header_arr[i+1]}"
@@ -575,9 +569,9 @@ function draw_inbox() {
     fi
 }
 
-function reload_unread() {
+function refresh_unread() {
     clearfifo
-    reset_indexes unread from_arr subject_arr unread_header_arr
+    reset_indexes marked_messages unread from_arr subject_arr unread_header_arr
     reset_colors
     get_unread_messages --reload
     fetch_header_field "$unread_str"
@@ -594,7 +588,6 @@ function reload_unread() {
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
     local -i selected_line=$1
-    #    echo $(( ((last_linepos - selected_line) / 2 - 1 ) ))
     echo $(( (last_linepos - $1) / 2 - 1 ))
 }
 
@@ -810,7 +803,7 @@ function unread_nav_mode() {
 		;;
 	    r)
 		draw_popup "Reloading unread messages"
-		reload_unread
+		refresh_unread
 		;;
 	    j)
 		inbox_list_forward --unread
@@ -1101,7 +1094,7 @@ function archive_marked_messages() {
 	fi
     done <&$readfd
     reset_indexes marked_messages
-    reload_unread
+    refresh_unread
 }
 
 function delete_marked_messages() {
@@ -1116,7 +1109,7 @@ function delete_marked_messages() {
 	fi
     done <&$readfd
     reset_indexes marked_messages
-    reload_unread
+    refresh_unread
 }
 
 function sort_array() {
