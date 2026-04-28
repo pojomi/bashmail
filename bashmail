@@ -194,7 +194,7 @@ function draw_next_page() {
 	clear
 	for (( i=0;i<message_remaining_lines;i++ )); do
 	    set_cursor $i 0
-	    echo -en "${open_message[i]}"
+	    echo -en "${open_message[open_message_range[top]+i]}"
 	done
 	set_cursor 0 0
 	show_cursor
