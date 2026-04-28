@@ -591,7 +591,8 @@ function reload_unread() {
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
     local -i selected_line=$1
-    echo $(( ((last_linepos - selected_line) / 2 - 1 ) ))
+    #    echo $(( ((last_linepos - selected_line) / 2 - 1 ) ))
+    echo $(( (last_linepos - $1) / 2 - 1 ))
 }
 
 function rel_header_index() {
@@ -868,7 +869,7 @@ function message_nav_mode () {
 function get_mime_structure() {
     clearfifo
     local -n unread_arr=$1
-    selected_message=${unread_arr[$(rel_msg_index $linepos)]}
+    selected_message=${unread_arr[$(rel_msg_index $index_at_cursor)]}
     local -A structure
     response=""; container=""; parens=""
     local -i paren_count
@@ -1035,7 +1036,7 @@ function print_message() {
 #######################################################################
 
 function mark_message() {
-    local -i index=$(rel_msg_index $linepos)
+    local -i index=$(rel_msg_index $index_at_cursor)
     if [[ "${marked_messages[@]}" =~ "${unread[index]}" ]]; then
 	marked_index=$(get_index_n marked_messages "${unread[index]}")
 	unset 'marked_messages[marked_index]'
