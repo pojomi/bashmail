@@ -645,6 +645,30 @@ function highlight() {
 
     reset_colors
     if (( prevlinepos > 0 )); then
+	if (( prevlinepos == last_linepos && linepos == firstunread )) ||\
+	   (( prevlinepos == firstunread && linepos == last_linepos )); then
+	    reset_colors; set_cursor $prevlinepos 0; erase_line
+	    if [[ "${marked_messages[@]}" =~ "${unread[prev_unread_index]}" ]]; then
+		echo -e "$W*$R${unread_header_arr[prev_index]}"
+		reset_colors; erase_line
+		echo -en " $Y${unread_header_arr[prev_index+1]}"
+	    else
+		echo -e " $R${unread_header_arr[prev_index]}"
+		reset_colors; erase_line
+		echo -en " $Y${unread_header_arr[prev_index+1]}"
+	    fi
+	    reset_colors; set_cursor $linepos 0; erase_line
+	    if [[ "${marked_messages[@]}" =~ "${unread[unread_cursor_index]}" ]]; then
+		echo -e "$W*$R$Bbg$Bold${unread_header_arr[index_at_cursor]}"
+		reset_colors; erase_line
+		echo -en " $Y$Bbg$Bold${unread_header_arr[index_at_cursor+1]}"
+	    else
+		echo -e " $R$Bbg$Bold${unread_header_arr[index_at_cursor]}"
+		reset_colors; erase_line
+		echo -en " $Y$Bbg$Bold${unread_header_arr[index_at_cursor+1]}"
+	    fi
+	    reset_colors; set_cursor $linepos 0; return
+	fi
 	if (( prev_index < index_at_cursor )); then
 	    set_cursor $prevlinepos 0; erase_line
 	    if [[ "${marked_messages[@]}" =~ "${unread[prev_unread_index]}" ]]; then
