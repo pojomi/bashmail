@@ -4,13 +4,19 @@
 - bash 4.0+
 - openssl
 # Installation
+With `make`:
 ```
-> git clone https://github.com/pojomi/bashmail.git
+git clone https://github.com/pojomi/bashmail.git
+make install
+```
+Without `make`:
+```
+git clone https://github.com/pojomi/bashmail.git
 # Add to bin
-> sudo cp bashmail /usr/bin/bashmail
-> bashmail
+sudo cp bashmail /usr/bin/bashmail
+bashmail
 # Or run here
-> ./bashmail
+./bashmail
 ```
 # Usage
 > [!CAUTION]
@@ -60,6 +66,7 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Known Issues
+- **WIP:** marked messages are not displaying their "*" symbol after moving forward/backward in the unread/inbox
 - Some messages will return with little to no text after all the parsing is finished
 - QP messages sometimes have leftover `)` after parsing hyperlinks
 - Unread messages tab is not set up for paging yet. Causes printing issues if there are more unread messages than there are lines available
