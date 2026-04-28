@@ -637,8 +637,8 @@ function update_bottom_bar() {
 }
 
 function highlight() {
-    local -i prev_unread_index=$(rel_header_index $prev_index)
-    local -i unread_cursor_index=$(rel_header_index $index_at_cursor)
+    local -i prev_unread_index=$(rel_msg_index $prev_index)
+    local -i unread_cursor_index=$(rel_msg_index $index_at_cursor)
 
     reset_colors
     if (( prevlinepos > 0 )); then
