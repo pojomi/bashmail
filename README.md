@@ -29,7 +29,7 @@ rm ~/.bashmail/.emailenc ~/.bashmail/.passenc
 and will be prompted to login again on relaunch.
 
 > [!NOTE]
-> Gmail/icloud Only if you have 2FA enabled, you must create an [app password](https://myaccount.google.com/apppasswords) and use that in place of your normal password.
+> Gmail/icloud Only if you have 2FA enabled, you must create an app password and use that in place of your normal password. [Google App Password](https://myaccount.google.com/apppasswords) [Apple App-Specific Password](https://support.apple.com/en-us/102654)
 
 On successful login, unread messages will be fetched. Once retrieved, a list will be printed to the screen.
 
@@ -66,7 +66,6 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Known Issues
 - Some messages will return with little to no text after all the parsing is finished
 - QP messages sometimes have leftover `)` after parsing hyperlinks
-- Unread messages tab is not set up for paging yet. Causes printing issues if there are more unread messages than there are lines available
 # Roadmap
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
