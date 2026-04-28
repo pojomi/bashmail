@@ -14,10 +14,8 @@ Without `make`:
 git clone https://github.com/pojomi/bashmail.git
 # Add to bin
 sudo cp bashmail /usr/bin/bashmail
-bashmail
-# Or run here
-./bashmail
 ```
+Then, just send `bashmail` in the terminal to launch.
 # Usage
 > [!CAUTION]
 > This has only been tested with Gmail/icloud accounts and is not guaranteed to function the same way with other IMAP servers.
