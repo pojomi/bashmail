@@ -577,11 +577,14 @@ function draw_inbox() {
 
 function reload_unread() {
     clearfifo
-    reset_indexes unread from_arr subject_arr
+    reset_indexes unread from_arr subject_arr unread_header_arr
     reset_colors
     get_unread_messages --reload
     fetch_header_field "$unread_str"
     parse_headers
+    combine_headers
+    clearfifo
+    hide_mode_off
     draw_inbox --unread
     set_bottom_bar
     highlight
