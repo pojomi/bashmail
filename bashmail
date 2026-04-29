@@ -548,19 +548,22 @@ function draw_inbox() {
     fi
 	
     if [[ $# -eq 1 && "$1" == "--unread" ]]; then
-	local -i j=0
-	local -i inbox_lines=$(( lines - 2 ))
+	local -i limit
 	unread_range[top]=0
-	index_at_cursor=0
-	prev_index=0
-	for (( i=0; i<inbox_lines; i+=2 )); do
+	if (( ${#unread_header_arr[@]} > max_inbox_line )); then
+	    limit=$max_inbox_line
+	else
+	    limit=${#unread_header_arr[@]}
+	fi
+	for (( i=unread_range[top]; i<limit; i+=2 )); do
 	    reset_colors
 	    echo -e " $R${unread_header_arr[i]}"
 	    reset_colors
 	    echo -e " $Y${unread_header_arr[i+1]}"
-	    (( j++ ))
 	done
-	unread_range[bottom]=$(( $i - 2 ))
+	unread_range[bottom]=$(( i - 2 ))
+	index_at_cursor=0
+	prev_index=0
 	set_cursor $linepos 1
       
 	if [[ -n "$bottom_text" ]]; then
@@ -588,12 +591,12 @@ function refresh_unread() {
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
     local -i selected_line=$1
-    echo $(( (last_linepos - $1) / 2 - 1 ))
+    echo -n $(( (last_linepos - $1) / 2 - 1 ))
 }
 
 function rel_header_index() {
     # $1 either prev_index or index_at_cursor
-    echo $(( $1 / 2 ))
+    echo -n $(( $1 / 2 ))
 }
 
 # To print the visibly highlighted index
@@ -712,7 +715,7 @@ function inbox_list_forward() {
 	if (( unreadcount > 1 )); then
 	    linesum=$(( 2 + linepos ))
 	    # Wrap at last message if all messages are shown
-	    if (( linesum >= bottomline && unreadcount <= max_shown )); then
+	    if (( linesum > last_linepos && unreadcount <= max_shown )); then
 		set_cursor $firstunread 1
 		prevlinepos=$linepos
 		prev_index=$index_at_cursor
@@ -734,7 +737,7 @@ function inbox_list_forward() {
 		echo -en "$BrBlackbg  [Unread]"; reset_colors
 		highlight
 		update_bottom_bar
-	    elif (( linesum < bottomline )); then
+	    elif (( index_at_cursor < unread_range[bottom] )); then
 		set_cursor $linesum 1
 		prevlinepos=$linepos
 		(( linepos += 2 ))
