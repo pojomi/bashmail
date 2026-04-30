@@ -1,5 +1,6 @@
 # bashmail
 `bashmail` is a terminal based IMAP client with a TUI inspired by programs like fff and bashtop.
+![Splash Screen](./images/splash-screen.png)
 # Dependencies
 - bash 4.0+
 - openssl
@@ -36,12 +37,12 @@ On successful login, unread messages will be fetched. Once retrieved, a list wil
 Each message in the "Unread" tab is made up of two lines in the format of:
 - Sender
 - Subject
-
+![List View](./images/list-view.png)
 > [!NOTE]
 > During early stages of release, opening any message will **not** mark the message as read.  This will be removed eventually, but makes testing much more convenient.
 
 The focused message will be highlighted. Pressing `return`/`enter` on a highlighted message will attempt to retrieve the text contents. All key bindings are listed below.
-
+![Message View](./images/message-view.png)
 > [!NOTE]
 > HTML messages are not supported at this time. When retrieving a message that is described as HTML, a warning popup will appear and not load the message.
 
