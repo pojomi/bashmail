@@ -70,7 +70,7 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Roadmap
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
-- Add GIF preview to README
+- ~~Add preview screenshots to README~~
 - ~~Archive/delete support~~
 - "Inbox" tab to view all messages in new-old sorting
 - ~~Paging for unread/inbox tabs~~
