@@ -62,6 +62,7 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 - `d` (unread tab only) delete all marked messages
 - `a` (unread tab only) archive all marked messages
 - `return`/`enter` to open focused message
+- `TAB` cycle between unread/inbox tabs
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Known Issues
@@ -71,9 +72,10 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
 - ~~Add preview screenshots to README~~
-- ~~Archive/delete support~~
-- "Inbox" tab to view all messages in new-old sorting
+- ~~Archive/delete support for unread tab~~
+- ~~"Inbox" tab to view all messages in new-old sorting~~
 - ~~Paging for unread/inbox tabs~~
+- Add archive/delete for inbox tab
 - Dynamic tracking window resize
 - Receive date to entries
 - Add maximum allowable size to messages retrieved from IMAP server
