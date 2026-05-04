@@ -25,7 +25,7 @@ On initial launch, an email and password will be requested. These are encrypted 
 
 If you need to modify these credentials you can remove them with
 ```
-rm ~/.config/bashmail/.emailenc ~/.config/bashmail/.passenc
+rm ~/.bashmail/.emailenc ~/.bashmail/.passenc
 ```
 and will be prompted to login again on relaunch.
 
@@ -66,16 +66,19 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Known Issues
+> [!CAUTION]
+> Archiving and deleting marked messages has been disabled in this most recent commit due to tracking issues. Will be fixed in next commit ASAP.
 - Some messages will return with little to no text after all the parsing is finished
 - QP messages sometimes have leftover `)` after parsing hyperlinks
 # Roadmap
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
+- Fix marked message ID tracking being passed to archive/delete commands
 - ~~Add preview screenshots to README~~
 - ~~Archive/delete support for unread tab~~
 - ~~"Inbox" tab to view all messages in new-old sorting~~
 - ~~Paging for unread/inbox tabs~~
-- Add archive/delete for inbox tab
+- ~~Add archive/delete for inbox tab~~
 - Dynamic tracking window resize
 - Receive date to entries
 - Add maximum allowable size to messages retrieved from IMAP server

@@ -75,9 +75,9 @@ declare -i lines columns margin_top margin_bottom unreadcount first_linepos last
 	linepos prevlinepos bottomline termcenter splashcenter splashstart splashcols\
 	state max_shown max_inbox_line index_at_cursor prev_index inbox_newest_id\
 	inboxcount
-declare -a unread_msg_ids open_message marked_messages from_arr subject_arr unread_header_arr\
+declare -a unread_msg_ids open_message from_arr subject_arr unread_header_arr\
 	inbox_header_arr inbox_header_arr inbox_msg_ids
-declare -A folder unread_range open_message_range inbox_range
+declare -A folder unread_range open_message_range inbox_range marked_messages 
 
 ##################################################################################
 #			   CURSOR AND SCREEN CONTROLS				 #
@@ -395,7 +395,14 @@ function reset_indexes() {
     for i in $(seq 1 $#); do
 	# Expand $i with ${!i} to get the string from $1,2,3...
 	local -n arg_arr=${!i}
-	unset "arg_arr[@]"
+	if [[ "$(declare -p ${!i})" == "declare -a"* ]]; then
+	    unset "arg_arr[@]"
+	elif [[ "$(declare -p ${!i})" == "declare -A"* ]]; then
+	    IFS=" "; local -a keys=($(echo "${!arg_arr[@]}")); unset IFS;
+	    for (( j=0; j<${#keys[@]}; j++ )); do
+		unset "arg_arr[${keys[j]}]"
+	    done
+	fi
     done
 }
 
@@ -573,14 +580,8 @@ function draw_inbox() {
 	set_cursor $first_linepos 1
 	for (( i=arr_range[top];i<arr_range[bottom]+2;i+=2 )); do
 	    reset_colors
-	    arr_index=$(rel_msg_index $i)
-	    if [[ "${marked_messages[@]}" =~ "${ids_arr[arr_index]}" ]]; then
-		echo -e "$W*$R${header_arr[i]}"; reset_colors
-		echo -e " $Y${header_arr[i+1]}";
-	    else
-		echo -e " $R${header_arr[i]}"; reset_colors
-		echo -e " $Y${header_arr[i+1]}"
-	    fi
+	    echo -e " $R${header_arr[i]}"; reset_colors
+	    echo -e " $Y${header_arr[i+1]}"
 	done
 	set_cursor $linepos 1
 	if [[ -n "$bottom_text" ]]; then
@@ -672,8 +673,11 @@ function refresh_unread() {
 # Relevant index of message
 # $1: Either $prevlinepos or $linepos
 function rel_msg_index() {
-    local -i selected_line=$1
-    echo -n $(( (last_linepos - $1) / 2 - 1 ))
+#    local -i selected_line=$1
+#    echo -n $(( (last_linepos - $1) / 2 - 1 ))
+    local -i selected_header_index=$(( $1 / 2 ))
+    local -i relative_msg_index=$(( selected_header_index - ($1 % 2) ))
+    echo -n $(( relative_msg_index ))
 }
 
 function rel_header_index() {
@@ -725,8 +729,8 @@ function update_bottom_bar() {
 }
 
 function highlight() {
-    local -i prev_arr_index=$(rel_msg_index $prevlinepos)
-    local -i arr_index=$(rel_msg_index $linepos)
+    local -i prev_arr_index=$(rel_msg_index $prev_index)
+    local -i arr_index=$(rel_msg_index $index_at_cursor)
     if [[ "$1" == "--unread" ]]; then
 	local -n header_arr=unread_header_arr
 	local -n id_arr=unread_msg_ids
@@ -736,70 +740,43 @@ function highlight() {
 	local -n id_arr=inbox_msg_ids
 	local -n arr_range=inbox_range
     fi
+    local -i prev_msg_id=${id_arr[prev_arr_index]}
+    local -i arr_msg_id=${id_arr[arr_index]}
+
+    # Use AA to store/modify header_arr lines to print
+    local -A header_output
+
+    # Add "*" for marked messages
+    if $(check_if_marked "$prev_msg_id"); then
+	header_output[prev0]="$W*$R${header_arr[prev_index]}"
+    else
+	header_output[prev0]=" $R${header_arr[prev_index]}"
+    fi
+    header_output[prev1]=" $Y${header_arr[prev_index+1]}"
+    if $(check_if_marked "$arr_msg_id"); then
+	header_output[cursor0]="$W*$R$Bbg$Bold${header_arr[index_at_cursor]}"
+    else
+	header_output[cursor0]=" $R$Bbg$Bold${header_arr[index_at_cursor]}"
+    fi
+    header_output[cursor1]=" $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
+	
     reset_colors
     # prevlinepos should always be > 0 except on the initial call of draw_inbox()
     if (( prevlinepos > 0 )); then
 	# Check if inbox_list_forward/backward wrapped around the list
-	if (( prevlinepos == last_linepos && linepos == first_linepos )) ||\
-	   (( prevlinepos == first_linepos && linepos == last_linepos )); then
-	    reset_colors; set_cursor $prevlinepos 0; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[prev_arr_index]}" ]]; then
-		echo -e "$W*$R${header_arr[prev_index]}"
-		reset_colors; erase_line
-		echo -en " $Y${header_arr[prev_index+1]}"
-	    else
-		echo -e " $R${header_arr[prev_index]}"
-		reset_colors; erase_line
-		echo -en " $Y${header_arr[prev_index+1]}"
-	    fi
-	    reset_colors; set_cursor $linepos 0; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[arr_index]}" ]]; then
-		echo -e "$W*$R$Bbg$Bold${header_arr[index_at_cursor]}"
-		reset_colors; erase_line
-		echo -en " $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
-	    else
-		echo -e " $R$Bbg$Bold${header_arr[index_at_cursor]}"
-		reset_colors; erase_line
-		echo -en " $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
-	    fi
-	    reset_colors; set_cursor $linepos 0; return
-	fi
-	# Handle cursor going downward
-	if (( prev_index < index_at_cursor )); then
-	    set_cursor $prevlinepos 0; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[prev_arr_index]}" ]]; then
-		echo -e "$W*$R${header_arr[prev_index]}"
-	    else echo -e " $R${header_arr[prev_index]}"; fi
-	    reset_colors; erase_line; echo -e " $Y${header_arr[prev_index+1]}"
-	    reset_colors; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[arr_index]}" ]]; then
-		echo -e "$W*$R$Bbg$Bold${header_arr[index_at_cursor]}"
-	    else echo -e " $R$Bbg$Bold${header_arr[index_at_cursor]}"; fi
-	    reset_colors; erase_line; echo -en " $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
-	    reset_colors; set_cursor $linepos 0
-	# Handle cursor going upward
-	elif (( prev_index > index_at_cursor )); then
-	    set_cursor $linepos 0; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[arr_index]}" ]]; then
-		echo -e "$W*$R$Bbg$Bold${header_arr[index_at_cursor]}"
-	    else echo -e " $R$Bbg$Bold${header_arr[index_at_cursor]}"; fi
-	    reset_colors; erase_line; echo -e " $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
-	    reset_colors; erase_line
-	    if [[ "${marked_messages[@]}" =~ "${id_arr[prev_arr_index]}" ]]; then
-		echo -e "$W*$R${header_arr[prev_index]}"
-	    else echo -e " $R${header_arr[prev_index]}"; fi
-	    reset_colors; erase_line; echo -en " $Y${header_arr[prev_index+1]}"
-	    reset_colors; set_cursor $linepos 0
-	fi
+	reset_colors; set_cursor $prevlinepos 1; erase_line
+	echo -e "${header_output[prev0]}"; reset_colors; erase_line
+	echo -en "${header_output[prev1]}"; reset_colors;
+	reset_colors; set_cursor $linepos 1; erase_line
+	echo -e "${header_output[cursor0]}"; reset_colors; erase_line
+	echo -en "${header_output[cursor1]}"; reset_colors; set_cursor $linepos 1
+	return
     # Initial draw_inbox() call handler
     else
 	arr_index=${arr_range[top]}
 	set_cursor $linepos 0; reset_colors; erase_line
-	if [[ "${marked_messages[@]}" =~ "${id_arr[arr_index]}" ]]; then
-	    echo -e "$W*$R$Bbg$Bold${header_arr[index_at_cursor]}"
-	else echo -e " $R$Bbg$Bold${header_arr[index_at_cursor]}"; fi
-	reset_colors; erase_line; echo -en " $Y$Bbg$Bold${header_arr[index_at_cursor+1]}"
-	reset_colors; set_cursor $linepos 0
+	echo -e "${header_output[cursor0]}"; reset_colors; erase_line
+	echo -en "${header_output[cursor1]}" reset_colors; set_cursor $linepos 1
     fi
 }
 
@@ -923,19 +900,30 @@ function unread_nav_mode() {
 		inbox_list_backward --unread
 		;;
 	    m)
-		mark_message
+		mark_message --unread
 		;;
 	    a)
-		archive_marked_messages
+		draw_popup --warn "Archive is currently disabled due to bugs" 
+		read -rsn 1 -t 1.5 
+		reset_colors
+		draw_inbox --unread --restore
+		highlight --unread
+		#archive_marked_messages
 		;;
 	    d)
-		delete_marked_messages
+		draw_popup --warn "Delete is currently disabled due to bugs" 
+		read -rsn 1 -t 1.5 
+		reset_colors
+		draw_inbox --unread --restore
+		highlight --unread
+		#delete_marked_messages
 		;;
 	    $'\n')
 		draw_popup "Opening message"
 		get_mime_structure --unread unread_msg_ids
 		;;
 	    $'\t')
+		reset_indexes marked_messages
 		switch_to_inbox		
 		;;
 	    "")
@@ -964,19 +952,30 @@ function inbox_nav_mode() {
 		inbox_list_backward --inbox
 		;;
 	    m)
-		mark_message
+		mark_message --inbox
 		;;
 	    a)
-		archive_marked_messages
+		draw_popup --warn "Archive is currently disabled due to bugs" 
+		read -rsn 1 -t 1.5 
+		reset_colors
+		draw_inbox --inbox --restore
+		highlight --inbox
+		#archive_marked_messages
 		;;
 	    d)
-		delete_marked_messages
+		draw_popup --warn "Delete is currently disabled due to bugs" 
+		read -rsn 1 -t 1.5 
+		reset_colors
+		draw_inbox --inbox --restore
+		highlight --inbox
+		#delete_marked_messages
 		;;
 	    $'\n')
 		draw_popup "Opening message"
 		get_mime_structure --inbox inbox_msg_ids
 		;;
 	    $'\t')
+		reset_indexes marked_messages
 		refresh_unread
 		break
 		;;
@@ -1219,17 +1218,29 @@ function print_message() {
 #######################################################################
 
 function mark_message() {
+    if [[ "$1" == "--unread" ]]; then
+	local -n id_arr=unread_msg_ids
+    elif [[ "$1" == "--inbox" ]]; then
+	local -n id_arr=inbox_msg_ids
+    fi
     local -i index=$(rel_msg_index $index_at_cursor)
-    if [[ "${marked_messages[@]}" =~ "${unread_msg_ids[index]}" ]]; then
-	marked_index=$(get_index_n marked_messages "${unread_msg_ids[index]}")
-	unset 'marked_messages[marked_index]'
+    local -i msg_id=${id_arr[index]}
+
+    if test -v marked_messages[$msg_id]; then
+	unset 'marked_messages[$msg_id]'
 	unmark_message
     else
-	marked_messages+=("${unread_msg_ids[index]}")
+	# No value needed. Just need to let bash know it's defined
+	marked_messages[$msg_id]=
 	draw_marked_symbol
     fi
-    local arr_str="${marked_messages[*]}"
+    local arr_str="${!marked_messages[@]}"
     marked_str="${arr_str// /,}"
+}
+
+function check_if_marked() {
+    # Tester function use in highlight()
+    [ -v marked_messages["$1"] ] && return 0 || return -1;
 }
 
 function draw_marked_symbol() {
