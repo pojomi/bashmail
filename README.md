@@ -53,16 +53,42 @@ Supported/tested message types include:
 
 In most cases, hyperlinks are replaced with "Link" written in your terminal's blue foreground color. These are **not** interactive links.
 ## Key Bindings
-- `q`/`^C` From unread tab, quit `bashmail`; From message view, `q` returns to unread tab, `^C` will quit `bashmail`
-- `j`/`k` to go down/up the list of unread messages, or down/up every line when viewing a message
-- `^N`/`^P` are bound to the same actions as `j`/`k`
-- `f`/`b` (message-view only) forward/back one full page
-- `r` (unread tab only) reload unread messages
-- `m` (unread tab only) mark message for deletion
-- `d` (unread tab only) delete all marked messages
-- `a` (unread tab only) archive all marked messages
-- `return`/`enter` to open focused message
-- `TAB` cycle between unread/inbox tabs
+| Unread Tab        |                                             |
+|:------------------|:--------------------------------------------|
+| Key               | Action                                      |
+| `q`               | Quit                                        |
+| `^C`              | Quit                                        |
+| `return or enter` | Open hovered message                        |
+| `TAB`             | Switch to Inbox Tab                         |
+| `j or ^N`         | Hover next message in list                  |
+| `k or ^P`         | Hover previous message in list              |
+| `r`               | Reload unread messages                      |
+| `m`               | Mark hovered message for deletion/archiving |
+| `d`               | Delete all marked messages                  |
+| `a`               | Archive all marked messages                 |
+
+| Inbox Tab         |                                             |
+|:------------------|:--------------------------------------------|
+| Key               | Action                                      |
+| `q`               | Return to unread tab                        |
+| `^C`              | Quit                                        |
+| `return or enter` | Open hovered message                        |
+| `TAB`             | Switch to Unread Tab                        |
+| `j or ^N`         | Hover next message in list                  |
+| `k or ^P`         | Hover previous message in list              |
+| `m`               | Mark hovered message for deletion/archiving |
+| `d`               | Delete all marked messages                  |
+| `a`               | Archive all marked messages                 |
+
+| Viewing Message |                                |
+|:----------------|:-------------------------------|
+| Key             | Action                         |
+| `h or ^B`       | Move cursor back one column    |
+| `j or ^N`       | Move cursor forward one line   |
+| `k or ^P`       | Move cursor backward one line  |
+| `l or ^F`       | Move cursor forward one column |
+| `f`             | Move forward one full page     |
+| `b`             | Move backward one full page    |
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Known Issues
