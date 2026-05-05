@@ -25,7 +25,7 @@ On initial launch, an email and password will be requested. These are encrypted 
 
 If you need to modify these credentials you can remove them with
 ```
-rm ~/.bashmail/.emailenc ~/.bashmail/.passenc
+rm ~/.config/bashmail/.emailenc ~/.config/bashmail/.passenc
 ```
 and will be prompted to login again on relaunch.
 
