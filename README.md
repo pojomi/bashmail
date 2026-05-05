@@ -66,14 +66,12 @@ In most cases, hyperlinks are replaced with "Link" written in your terminal's bl
 # Other Useful Information
 `bashmail` uses your terminal's default color specifications. Appearance will vary for every user.
 # Known Issues
-> [!CAUTION]
-> Archiving and deleting marked messages has been disabled in this most recent commit due to tracking issues. Will be fixed in next commit ASAP.
 - Some messages will return with little to no text after all the parsing is finished
 - QP messages sometimes have leftover `)` after parsing hyperlinks
 # Roadmap
 Completed tasks will be rewritten with strikethrough style when completed. New tasks may be added. The list below is in planned order of completion.
 
-- Fix marked message ID tracking being passed to archive/delete commands
+- ~~Fix marked message ID tracking being passed to archive/delete commands~~
 - ~~Add preview screenshots to README~~
 - ~~Archive/delete support for unread tab~~
 - ~~"Inbox" tab to view all messages in new-old sorting~~
