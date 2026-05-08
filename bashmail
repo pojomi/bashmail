@@ -2,7 +2,8 @@
 
 # Save the terminal's screen prior to launching app
 echo -en '\e[?1049h'
-shopt -s extglob
+shopt -s extglob checkwinsize
+cat /dev/null
 #################################################################################
 #				      VARS					#
 #################################################################################
@@ -1266,7 +1267,8 @@ PS1=""
 trap "echo -en '\e[?1049l'" EXIT ERR
 
 # Get total columns and lines
-read -r lines columns < <(stty size)
+lines=$LINES
+columns=$COLUMNS
 
 bottomline=$lines
 max_shown=$(( (bottomline - 2) / 2 ))
